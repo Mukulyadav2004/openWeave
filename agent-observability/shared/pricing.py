@@ -64,11 +64,16 @@ class ModelPriceCache:
 
     def __init__(self, ttl_seconds: int = 300):
         self._ttl = ttl_seconds
-        self._loaded_at = 0.0
+        # None, not 0.0: time.monotonic() counts from boot on Linux, so a process
+        # started within `ttl` seconds of boot (a fresh CI runner or k8s node)
+        # saw monotonic() - 0.0 < ttl, skipped its first load, and priced every
+        # generation as unknown until the TTL ran out.
+        self._loaded_at: float | None = None
         self._models: list[ModelPrice] = []
 
     async def refresh(self, conn, force: bool = False) -> None:
-        if not force and (time.monotonic() - self._loaded_at) < self._ttl:
+        if (not force and self._loaded_at is not None
+                and (time.monotonic() - self._loaded_at) < self._ttl):
             return
         rows = (await conn.execute(text("""
             SELECT m.id, m.model_name, m.project_id, m.match_pattern, m.start_date,

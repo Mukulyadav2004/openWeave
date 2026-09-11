@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenWeave</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Palette roles. Light values on :root, dark values redefined under BOTH the
+   OS media query and an explicit data-theme, so a toggle wins either way.
+   Categorical slots 1-3 carry span type; they validated all-pairs in both modes
+   (CVD dE 9.2 light / 9.4 dark, normal-vision 24.0 / 20.9). Aqua sits below 3:1
+   on the light surface, so every bar also carries its type as TEXT - identity is
+   never colour-alone. Everything past the three named types is neutral rather
+   than a generated hue.
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --surface-0:#f3f3f1; --surface-1:#fcfcfb; --surface-2:#ebebe7;
+  --border:#dcdcd6; --border-strong:#c3c2b7;
+  --text-1:#0b0b0b; --text-2:#52514e; --text-3:#7a7873;
+  --gen:#2a78d6; --tool:#eb6834; --retr:#1baf7a; --other:#9a9891;
+  --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+  --accent:#2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0:#121211; --surface-1:#1a1a19; --surface-2:#242422;
+    --border:#33332f; --border-strong:#4a4a45;
+    --text-1:#ffffff; --text-2:#c3c2b7; --text-3:#8e8d85;
+    --gen:#3987e5; --tool:#d95926; --retr:#199e70; --other:#7d7b75;
+    --accent:#3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0:#121211; --surface-1:#1a1a19; --surface-2:#242422;
+  --border:#33332f; --border-strong:#4a4a45;
+  --text-1:#ffffff; --text-2:#c3c2b7; --text-3:#8e8d85;
+  --gen:#3987e5; --tool:#d95926; --retr:#199e70; --other:#7d7b75;
+  --accent:#3987e5;
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--surface-0); color:var(--text-1);
+  font:13px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+h1,h2,h3 { margin:0; font-weight:600; }
+button,input,select { font:inherit; color:inherit; }
+code,.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+
+header {
+  display:flex; align-items:center; gap:16px; padding:12px 20px;
+  background:var(--surface-1); border-bottom:1px solid var(--border);
+  position:sticky; top:0; z-index:10; flex-wrap:wrap;
+}
+.brand { font-size:15px; font-weight:650; letter-spacing:-0.01em; }
+.brand span { color:var(--accent); }
+.spacer { flex:1; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--text-3); }
+.dot.ok { background:var(--good); } .dot.bad { background:var(--critical); }
+
+.tabs { display:flex; gap:4px; }
+.tab {
+  padding:5px 12px; border-radius:6px; border:1px solid transparent;
+  background:none; cursor:pointer; color:var(--text-2);
+}
+.tab[aria-selected="true"] {
+  background:var(--surface-2); border-color:var(--border); color:var(--text-1);
+  font-weight:550;
+}
+
+.wrap { padding:20px; max-width:1500px; margin:0 auto; }
+.card {
+  background:var(--surface-1); border:1px solid var(--border);
+  border-radius:10px; padding:16px; margin-bottom:16px;
+}
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+label { display:block; font-size:11px; color:var(--text-2); margin-bottom:4px;
+        text-transform:uppercase; letter-spacing:0.04em; }
+input,select {
+  background:var(--surface-0); border:1px solid var(--border);
+  border-radius:6px; padding:6px 9px; min-width:170px;
+}
+input:focus,select:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+.btn {
+  background:var(--accent); color:#fff; border:none; border-radius:6px;
+  padding:7px 14px; cursor:pointer; font-weight:550;
+}
+.btn.ghost { background:var(--surface-2); color:var(--text-1);
+             border:1px solid var(--border); }
+.btn:disabled { opacity:.5; cursor:default; }
+
+table { width:100%; border-collapse:collapse; }
+th {
+  text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em;
+  color:var(--text-2); font-weight:600; padding:6px 10px;
+  border-bottom:1px solid var(--border-strong); white-space:nowrap;
+}
+td { padding:7px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+tbody tr { cursor:pointer; }
+tbody tr:hover { background:var(--surface-2); }
+tbody tr[aria-selected="true"] { background:var(--surface-2);
+                                 box-shadow:inset 2px 0 0 var(--accent); }
+.num { text-align:right; font-variant-numeric:tabular-nums; }
+.scroll-x { overflow-x:auto; }
+
+.pill {
+  display:inline-flex; align-items:center; gap:5px; padding:1px 7px;
+  border-radius:999px; font-size:11px; font-weight:550;
+  border:1px solid var(--border-strong); color:var(--text-2);
+}
+.pill.score { background:var(--surface-2); }
+.swatch { width:8px; height:8px; border-radius:2px; flex:none; }
+
+.split { display:grid; grid-template-columns:minmax(0,360px) minmax(0,1fr); gap:16px;
+         align-items:start; }
+@media (max-width:1100px) { .split { grid-template-columns:minmax(0,1fr); } }
+
+/* --- waterfall ---------------------------------------------------------- */
+.wf-row {
+  display:grid; grid-template-columns:minmax(260px,36%) 1fr; gap:12px;
+  align-items:center; padding:3px 0; cursor:pointer; border-radius:6px;
+}
+.wf-row:hover { background:var(--surface-2); }
+.wf-row[aria-selected="true"] { background:var(--surface-2);
+                                box-shadow:inset 2px 0 0 var(--accent); }
+.wf-label { display:flex; align-items:center; gap:6px; min-width:0; }
+.wf-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+           min-width:0; }
+.wf-type {
+  font-size:10px; font-weight:650; letter-spacing:0.03em; padding:0 5px;
+  border-radius:3px; color:#fff; flex:none;
+}
+.wf-track { position:relative; height:16px; background:var(--surface-2);
+            border-radius:4px; }
+.wf-bar {
+  position:absolute; top:2px; height:12px; border-radius:4px; min-width:3px;
+  box-shadow:0 0 0 2px var(--surface-1);   /* 2px surface gap between marks */
+}
+.wf-ms { position:absolute; top:0; font-size:10px; color:var(--text-2);
+         line-height:16px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.badge {
+  display:inline-flex; align-items:center; gap:4px; font-size:10px;
+  font-weight:650; padding:0 5px; border-radius:3px; flex:none;
+}
+.badge.err { background:var(--critical); color:#fff; }
+.badge.warn { background:var(--warning); color:#3a2a00; }
+
+.kv { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:12px; }
+.kv dt { color:var(--text-2); white-space:nowrap; }
+.kv dd { margin:0; font-variant-numeric:tabular-nums; }
+pre.io {
+  background:var(--surface-0); border:1px solid var(--border); border-radius:6px;
+  padding:9px; max-height:220px; overflow:auto; white-space:pre-wrap;
+  word-break:break-word; margin:6px 0 0; font-size:12px;
+}
+.muted { color:var(--text-3); }
+.err-text { color:var(--critical); }
+.delta-up { color:var(--good); font-weight:600; }
+.delta-down { color:var(--critical); font-weight:600; }
+.legend { display:flex; gap:14px; flex-wrap:wrap; font-size:11px;
+          color:var(--text-2); margin-bottom:10px; }
+.legend span { display:inline-flex; align-items:center; gap:5px; }
+.empty { padding:28px; text-align:center; color:var(--text-3); }
+.hidden { display:none !important; }
+.note { font-size:12px; color:var(--text-2); margin-top:8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">open<span>weave</span></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-traces" aria-selected="true">Traces</button>
+    <button class="tab" role="tab" id="tab-compare" aria-selected="false">Experiments</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="pill"><span class="dot" id="conn-dot"></span><span id="conn-text">not connected</span></div>
+  <button class="btn ghost" id="btn-settings">Connection</button>
+  <button class="btn ghost" id="btn-theme" title="Toggle theme">◐</button>
+</header>
+
+<div class="wrap">
+
+  <div class="card" id="settings">
+    <h2 style="margin-bottom:12px">Connect</h2>
+    <div class="row">
+      <div><label for="api">API base</label>
+        <input id="api" value="http://localhost:8000" spellcheck="false"></div>
+      <div><label for="pk">Public key</label>
+        <input id="pk" placeholder="pk-ow-…" spellcheck="false"></div>
+      <div><label for="sk">Secret key</label>
+        <input id="sk" type="password" placeholder="sk-ow-…" spellcheck="false"></div>
+      <button class="btn" id="btn-connect">Connect</button>
+    </div>
+    <p class="note">
+      Keys come from <code>python scripts/bootstrap.py &lt;project&gt;</code>. They are
+      kept in this browser only. If the API runs on another origin, start it with
+      <code>CORS_ORIGINS=http://localhost:8080</code>.
+    </p>
+    <p class="note err-text hidden" id="conn-err"></p>
+  </div>
+
+  <!-- ================= TRACES ================= -->
+  <section id="view-traces" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div><label for="f-name">Name</label><input id="f-name" placeholder="any"></div>
+        <div><label for="f-user">User</label><input id="f-user" placeholder="any"></div>
+        <div><label for="f-kind">Traffic</label>
+          <select id="f-kind">
+            <option value="">All</option>
+            <option value="false">Production only</option>
+            <option value="true">Experiments only</option>
+          </select></div>
+        <button class="btn" id="btn-refresh">Refresh</button>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="card" style="padding:8px">
+        <div class="scroll-x">
+          <table>
+            <thead><tr>
+              <th>Trace</th><th class="num">Latency</th><th class="num">Cost</th>
+            </tr></thead>
+            <tbody id="trace-rows"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="traces-empty">No traces yet.</div>
+      </div>
+
+      <div>
+        <div class="card" id="detail-card">
+          <div class="empty" id="detail-empty">Select a trace.</div>
+          <div id="detail" class="hidden">
+            <h2 id="d-name"></h2>
+            <div class="row" style="gap:6px; margin:8px 0 14px">
+              <span class="pill mono" id="d-id"></span>
+              <span class="pill" id="d-exp"></span>
+            </div>
+            <dl class="kv" id="d-kv"></dl>
+
+            <h3 style="margin:18px 0 8px">Waterfall</h3>
+            <div class="legend" id="wf-legend"></div>
+            <div id="waterfall"></div>
+
+            <div id="span-detail" class="hidden" style="margin-top:14px;
+                 border-top:1px solid var(--border); padding-top:12px"></div>
+
+            <h3 style="margin:18px 0 8px">Scores</h3>
+            <div id="d-scores"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= EXPERIMENTS ================= -->
+  <section id="view-compare" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div><label for="c-dataset">Dataset</label><select id="c-dataset"></select></div>
+        <div><label for="c-a">Baseline run</label><select id="c-a"></select></div>
+        <div><label for="c-b">Compare with</label><select id="c-b"></select></div>
+        <button class="btn" id="btn-compare">Compare</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="empty" id="cmp-empty">Pick two runs.</div>
+      <div id="cmp" class="hidden">
+        <h2>Run summary</h2>
+        <div class="scroll-x"><table id="cmp-summary"></table></div>
+        <p class="note" id="cmp-delta"></p>
+        <h2 style="margin-top:20px">Per item</h2>
+        <p class="note">A mean that barely moved can still hide a regression on a
+          handful of cases, so the per-item rows are shown too.</p>
+        <div class="scroll-x"><table id="cmp-items"></table></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+
+/* Only these three span types get a hue; everything else is neutral. Past three
+   slots a categorical palette cannot clear the all-pairs CVD floors, and a
+   waterfall puts arbitrary pairs next to each other. The type name is rendered
+   as text on every bar regardless, so colour is reinforcement, never the
+   channel that carries meaning. */
+const TYPE_COLOR = {
+  GENERATION: "var(--gen)",
+  TOOL:       "var(--tool)",
+  RETRIEVER:  "var(--retr)",
+};
+const colorFor = t => TYPE_COLOR[t] || "var(--other)";
+
+const $ = id => document.getElementById(id);
+const state = { base:"", auth:"", trace:null, span:null, compare:null };
+
+/* --- storage: wrapped, because a private window throws on access ---------- */
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch { /* non-fatal */ } },
+};
+
+/* --- formatting ---------------------------------------------------------- */
+const ms = v => v == null ? "—" :
+  v >= 1000 ? (v/1000).toFixed(2)+" s" : Math.round(v)+" ms";
+const money = v => v == null ? "—" :
+  v === 0 ? "$0" : v < 0.01 ? "$"+v.toFixed(6) : "$"+v.toFixed(4);
+const when = t => { if(!t) return "—";
+  const d = new Date(t), now = Date.now(), diff = (now-d)/1000;
+  if (diff < 60) return Math.round(diff)+"s ago";
+  if (diff < 3600) return Math.round(diff/60)+"m ago";
+  if (diff < 86400) return Math.round(diff/3600)+"h ago";
+  return d.toLocaleDateString(); };
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const trunc = (s,n=1200) => { s = String(s ?? "");
+  return s.length > n ? s.slice(0,n)+"\n…["+s.length+" chars]" : s; };
+
+/* --- api ----------------------------------------------------------------- */
+async function api(path, params) {
+  const url = new URL(state.base + path);
+  if (params) for (const [k,v] of Object.entries(params))
+    if (v !== "" && v != null) url.searchParams.set(k,v);
+  const res = await fetch(url, { headers:{ authorization: state.auth } });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+/* --- connect ------------------------------------------------------------- */
+function setConn(ok, text) {
+  $("conn-dot").className = "dot " + (ok ? "ok" : "bad");
+  $("conn-text").textContent = text;
+}
+
+async function connect() {
+  state.base = $("api").value.replace(/\/$/, "");
+  const pk = $("pk").value.trim(), sk = $("sk").value.trim();
+  state.auth = "Basic " + btoa(pk + ":" + sk);
+  $("conn-err").classList.add("hidden");
+  try {
+    await api("/traces", { limit: 1 });
+    setConn(true, "connected");
+    store.set("ow", JSON.stringify({ base: state.base, pk, sk }));
+    $("settings").classList.add("hidden");
+    $("view-traces").classList.remove("hidden");
+    await Promise.all([loadTraces(), loadDatasets()]);
+  } catch (e) {
+    setConn(false, "failed");
+    $("conn-err").textContent =
+      e.message.startsWith("401")
+        ? "401 — check the key pair."
+        : `${e.message}. If the API is on another origin, start it with CORS_ORIGINS set.`;
+    $("conn-err").classList.remove("hidden");
+  }
+}
+
+/* --- traces list --------------------------------------------------------- */
+async function loadTraces() {
+  const kind = $("f-kind").value;
+  const data = (await api("/traces", {
+    name: $("f-name").value.trim(), user_id: $("f-user").value.trim(),
+    is_experiment: kind, limit: 100,
+  })).data;
+
+  $("traces-empty").classList.toggle("hidden", data.length > 0);
+  $("trace-rows").innerHTML = data.map(t => {
+    const scores = Object.entries(t.scores || {}).map(([n,v]) =>
+      `<span class="pill score">${esc(n)} ${Number(v).toFixed(2)}</span>`).join(" ");
+    return `<tr data-id="${esc(t.id)}">
+      <td><div style="font-weight:550">${esc(t.name || "(unnamed)")}</div>
+          <div class="muted" style="font-size:11px; margin:1px 0 3px">
+            ${when(t.timestamp)} · ${t.span_count ?? 0} spans</div>
+          ${scores || ""}</td>
+      <td class="num">${ms(t.latency_ms)}</td>
+      <td class="num">${money(t.total_cost)}</td></tr>`;
+  }).join("");
+
+  $("trace-rows").querySelectorAll("tr").forEach(tr =>
+    tr.onclick = () => openTrace(tr.dataset.id));
+}
+
+/* --- trace detail -------------------------------------------------------- */
+async function openTrace(id) {
+  $("trace-rows").querySelectorAll("tr").forEach(tr =>
+    tr.setAttribute("aria-selected", String(tr.dataset.id === id)));
+  const t = await api("/traces/" + encodeURIComponent(id));
+  state.trace = t; state.span = null;
+
+  $("detail-empty").classList.add("hidden");
+  $("detail").classList.remove("hidden");
+  $("d-name").textContent = t.name || "(unnamed)";
+  $("d-id").textContent = t.id;
+  $("d-exp").textContent = t.is_experiment ? "experiment" : "production";
+
+  const rows = flatten(t.observations);
+  const orphans = rows.filter(r => r.node.parent_missing).length;
+  $("d-kv").innerHTML = [
+    ["Spans", t.span_count],
+    ["Cost", money(t.total_cost)],
+    ["User", esc(t.user_id || "—")],
+    ["Release", esc(t.release || "—")],
+    orphans ? ["Incomplete",
+      `<span class="badge warn">⚠ ${orphans} span${orphans>1?"s":""} missing a parent</span>`]
+      : null,
+  ].filter(Boolean).map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+  drawWaterfall(rows);
+  $("span-detail").classList.add("hidden");
+
+  $("d-scores").innerHTML = t.scores.length ? t.scores.map(s => `
+    <div style="display:flex; gap:8px; align-items:baseline; padding:5px 0;
+                border-bottom:1px solid var(--border)">
+      <strong>${esc(s.name)}</strong>
+      <span class="mono">${s.value != null ? Number(s.value).toFixed(3)
+                                           : esc(s.string_value)}</span>
+      <span class="pill">${esc(s.source)}${
+        s.evaluator_version ? " · judge v" + s.evaluator_version : ""}</span>
+      <span class="muted" style="flex:1">${esc(s.comment || "")}</span>
+    </div>`).join("")
+    : '<p class="muted">No scores yet — the judge may still be running.</p>';
+}
+
+/* Flatten the tree for rendering. The API returns spans whose parent never
+   arrived at the top level with parent_missing:true; they are drawn at depth 0
+   with a badge rather than silently dropped. */
+function flatten(nodes, depth = 0, out = []) {
+  for (const n of nodes) {
+    out.push({ node: n, depth });
+    if (n.children?.length) flatten(n.children, depth + 1, out);
+  }
+  return out;
+}
+
+function drawWaterfall(rows) {
+  const present = [...new Set(rows.map(r => r.node.type))];
+  $("wf-legend").innerHTML = present.map(t =>
+    `<span><i class="swatch" style="background:${colorFor(t)}"></i>${esc(t)}</span>`
+  ).join("") + (rows.some(r => r.node.level === "ERROR")
+    ? '<span><i class="swatch" style="background:var(--critical)"></i>error</span>' : "");
+
+  const starts = rows.map(r => +new Date(r.node.start_time));
+  const ends = rows.map(r => r.node.end_time ? +new Date(r.node.end_time)
+                                             : +new Date(r.node.start_time));
+  const t0 = Math.min(...starts), t1 = Math.max(...ends);
+  const span = Math.max(t1 - t0, 1);
+
+  $("waterfall").innerHTML = rows.map((r, i) => {
+    const n = r.node;
+    const s = +new Date(n.start_time);
+    const e = n.end_time ? +new Date(n.end_time) : s;
+    const left = ((s - t0) / span) * 100;
+    const width = Math.max(((e - s) / span) * 100, 0.6);
+    const isErr = n.level === "ERROR";
+    const bg = isErr ? "var(--critical)" : colorFor(n.type);
+    // Label goes left of the bar once the bar's END approaches the right edge;
+    // otherwise it runs out of room and wraps onto a second line.
+    const labelLeft = (left + width) > 72;
+    return `<div class="wf-row" data-i="${i}" role="button" tabindex="0">
+      <div class="wf-label" style="padding-left:${r.depth * 14}px">
+        <span class="wf-type" style="background:${bg}">${esc(n.type)}</span>
+        <span class="wf-name">${esc(n.name || "(unnamed)")}</span>
+        ${isErr ? '<span class="badge err">⚠ ERROR</span>' : ""}
+        ${n.parent_missing ? '<span class="badge warn">⚠ parent missing</span>' : ""}
+      </div>
+      <div class="wf-track">
+        <div class="wf-bar" style="left:${left}%; width:${width}%; background:${bg}"></div>
+        <span class="wf-ms" style="${labelLeft
+          ? `right:calc(${100 - left}% + 8px)`
+          : `left:calc(${left + width}% + 8px)`}"
+          >${ms(n.latency_ms)}</span>
+      </div></div>`;
+  }).join("");
+
+  $("waterfall").querySelectorAll(".wf-row").forEach(el => {
+    const pick = () => showSpan(rows[+el.dataset.i].node, el);
+    el.onclick = pick;
+    el.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ")
+      { ev.preventDefault(); pick(); } };
+  });
+}
+
+function showSpan(n, el) {
+  $("waterfall").querySelectorAll(".wf-row").forEach(r =>
+    r.setAttribute("aria-selected", String(r === el)));
+  const usage = n.usage_details
+    ? Object.entries(n.usage_details).map(([k,v]) => `${k} ${v}`).join(" · ") : null;
+  $("span-detail").innerHTML = `
+    <h3 style="margin-bottom:8px">${esc(n.name || "(unnamed)")}
+      <span class="pill" style="margin-left:6px">${esc(n.type)}</span></h3>
+    ${n.parent_missing ? '<p class="note"><span class="badge warn">⚠ parent missing</span> '
+      + 'Its parent span never arrived — check the dead-letter table.</p>' : ""}
+    <dl class="kv">
+      <dt>Latency</dt><dd>${ms(n.latency_ms)}</dd>
+      ${n.time_to_first_token_ms != null
+        ? `<dt>Time to first token</dt><dd>${ms(n.time_to_first_token_ms)}</dd>` : ""}
+      ${n.model ? `<dt>Model</dt><dd class="mono">${esc(n.model)}</dd>` : ""}
+      ${usage ? `<dt>Tokens</dt><dd class="mono">${esc(usage)}</dd>` : ""}
+      ${n.total_cost != null ? `<dt>Cost</dt><dd>${money(n.total_cost)}</dd>` : ""}
+    </dl>
+    ${n.status_message
+      ? `<p class="err-text mono" style="margin-top:8px">${esc(n.status_message)}</p>` : ""}
+    ${n.input != null ? `<label style="margin-top:10px">Input</label>
+        <pre class="io">${esc(trunc(n.input))}</pre>` : ""}
+    ${n.output != null ? `<label style="margin-top:10px">Output</label>
+        <pre class="io">${esc(trunc(n.output))}</pre>` : ""}`;
+  $("span-detail").classList.remove("hidden");
+}
+
+/* --- experiments --------------------------------------------------------- */
+async function loadDatasets() {
+  let data = [];
+  try { data = (await api("/datasets")).data; } catch { /* none yet */ }
+  $("c-dataset").innerHTML = data.map(d =>
+    `<option value="${esc(d.name)}">${esc(d.name)} (${d.item_count} items, ${d.run_count} runs)</option>`
+  ).join("") || '<option value="">no datasets</option>';
+  if (data.length) await loadRuns();
+}
+
+async function loadRuns() {
+  const ds = $("c-dataset").value;
+  if (!ds) return;
+  const runs = (await api(`/datasets/${encodeURIComponent(ds)}/runs`)).data;
+  const opts = runs.map(r =>
+    `<option value="${esc(r.name)}">${esc(r.name)} (${r.item_count})</option>`).join("");
+  $("c-a").innerHTML = opts; $("c-b").innerHTML = opts;
+  if (runs.length > 1) $("c-b").selectedIndex = 1;
+}
+
+async function runCompare() {
+  const ds = $("c-dataset").value, a = $("c-a").value, b = $("c-b").value;
+  if (!ds || !a || !b || a === b) {
+    $("cmp-empty").textContent = "Pick two different runs.";
+    $("cmp-empty").classList.remove("hidden"); $("cmp").classList.add("hidden");
+    return;
+  }
+  const rep = await api(`/datasets/${encodeURIComponent(ds)}/compare`,
+                        { runs: `${a},${b}` });
+  state.compare = rep;
+  $("cmp-empty").classList.add("hidden"); $("cmp").classList.remove("hidden");
+
+  const names = [...new Set(rep.runs.flatMap(r => Object.keys(r.scores)))].sort();
+  $("cmp-summary").innerHTML = `
+    <thead><tr><th>Run</th><th class="num">Items</th><th class="num">Avg cost</th>
+      <th class="num">Avg latency</th>${names.map(n =>
+        `<th class="num">${esc(n)}</th>`).join("")}</tr></thead>
+    <tbody>${rep.runs.map(r => `<tr style="cursor:default">
+      <td style="font-weight:550">${esc(r.run)}</td>
+      <td class="num">${r.items}</td>
+      <td class="num">${money(r.avg_cost)}</td>
+      <td class="num">${ms(r.avg_latency_ms)}</td>
+      ${names.map(n => { const s = r.scores[n];
+        return `<td class="num">${s && s.mean != null
+          ? Number(s.mean).toFixed(3) + `<span class="muted" style="font-size:11px"> n=${s.n}</span>`
+          : "—"}</td>`; }).join("")}</tr>`).join("")}</tbody>`;
+
+  const [label, diff] = Object.entries(rep.deltas)[0] || [];
+  $("cmp-delta").innerHTML = diff && Object.keys(diff).length
+    ? esc(label) + ": " + Object.entries(diff).map(([k,v]) => {
+        const pct = k.endsWith("_pct");
+        // Cost going UP is bad; a quality score going up is good.
+        const good = pct ? v < 0 : v > 0;
+        const txt = pct ? (v > 0 ? "+" : "") + v.toFixed(1) + "%"
+                        : (v > 0 ? "+" : "") + v.toFixed(3);
+        return `<span class="${good ? "delta-up" : "delta-down"}">${esc(k)} ${txt}</span>`;
+      }).join(" · ")
+    : '<span class="muted">No score overlap between these runs yet.</span>';
+
+  const runNames = rep.runs.map(r => r.run);
+  $("cmp-items").innerHTML = `
+    <thead><tr><th>Input</th>${runNames.map(n =>
+      `<th class="num">${esc(n)}</th>`).join("")}</tr></thead>
+    <tbody>${rep.items.map(it => `<tr style="cursor:default">
+      <td>${esc(trunc(typeof it.input === "string" ? it.input
+        : JSON.stringify(it.input), 90))}</td>
+      ${runNames.map(rn => { const r = it.runs[rn];
+        if (!r) return '<td class="num muted">—</td>';
+        const vals = Object.values(r.scores);
+        const v = vals.length && vals[0] != null ? Number(vals[0]).toFixed(2) : "—";
+        return `<td class="num"><a href="#" data-trace="${esc(r.trace_id)}"
+          style="color:var(--accent)">${v}</a></td>`; }).join("")}
+      </tr>`).join("")}</tbody>`;
+
+  $("cmp-items").querySelectorAll("a[data-trace]").forEach(a =>
+    a.onclick = ev => { ev.preventDefault(); showTab("traces");
+      openTrace(a.dataset.trace); });
+}
+
+/* --- chrome -------------------------------------------------------------- */
+function showTab(which) {
+  $("tab-traces").setAttribute("aria-selected", String(which === "traces"));
+  $("tab-compare").setAttribute("aria-selected", String(which === "compare"));
+  $("view-traces").classList.toggle("hidden", which !== "traces");
+  $("view-compare").classList.toggle("hidden", which !== "compare");
+}
+
+$("tab-traces").onclick = () => showTab("traces");
+$("tab-compare").onclick = () => { showTab("compare"); loadDatasets(); };
+$("btn-connect").onclick = connect;
+$("btn-refresh").onclick = loadTraces;
+$("btn-compare").onclick = runCompare;
+$("c-dataset").onchange = loadRuns;
+$("btn-settings").onclick = () => $("settings").classList.toggle("hidden");
+$("btn-theme").onclick = () => {
+  const now = document.documentElement.getAttribute("data-theme");
+  const next = now === "dark" ? "light" : now === "light" ? "" : "dark";
+  if (next) document.documentElement.setAttribute("data-theme", next);
+  else document.documentElement.removeAttribute("data-theme");
+  store.set("ow-theme", next);
+};
+
+(function init() {
+  const theme = store.get("ow-theme");
+  if (theme) document.documentElement.setAttribute("data-theme", theme);
+  const saved = store.get("ow");
+  if (saved) {
+    try {
+      const { base, pk, sk } = JSON.parse(saved);
+      $("api").value = base; $("pk").value = pk; $("sk").value = sk;
+      connect();
+      return;
+    } catch { /* fall through to the form */ }
+  }
+  setConn(false, "not connected");
+})();
+</script>
+</body>
+</html>

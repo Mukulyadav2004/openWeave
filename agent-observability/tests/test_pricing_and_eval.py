@@ -199,6 +199,23 @@ def test_aggregate_usage_keys_are_not_double_counted():
     assert total == Decimal("0.2")
 
 
+@pytest.mark.asyncio
+async def test_price_cache_loads_on_first_use_right_after_boot(db, monkeypatch):
+    """Regression: _loaded_at started at 0.0 and time.monotonic() counts from
+    boot, so a process started within the TTL of boot skipped its first load and
+    priced every generation as unknown."""
+    import pricing
+
+    real, start = pricing.time.monotonic, pricing.time.monotonic()
+    # Shift the clock so this process appears to have started 5s after boot.
+    monkeypatch.setattr(pricing.time, "monotonic", lambda: real() - start + 5.0)
+
+    cache = ModelPriceCache(ttl_seconds=300)
+    async with db.connect() as conn:
+        await cache.refresh(conn)
+    assert cache.match("gpt-4o", PROJECT) is not None
+
+
 # --------------------------------------------------------------------------- #
 # Judge helpers
 # --------------------------------------------------------------------------- #
