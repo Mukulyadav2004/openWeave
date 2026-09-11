@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
 #
-# Generate Python gRPC stubs from trace.proto into the ingestion-server and sdk
-# services. Run from anywhere with:  bash proto/generate.sh
-#
+# Generate Python gRPC stubs from openweave.proto.  bash proto/generate.sh
 set -euo pipefail
 
-# Resolve the directory this script lives in (the proto/ dir) and the repo root.
 PROTO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${PROTO_DIR}/.." && pwd)"
 
-OUT_DIRS=("${ROOT_DIR}/ingestion-server" "${ROOT_DIR}/sdk")
+OUT_DIRS=("${ROOT_DIR}/ingestion-server" "${ROOT_DIR}/sdk" "${ROOT_DIR}/benchmark")
 
 for OUT_DIR in "${OUT_DIRS[@]}"; do
   echo "Generating stubs into ${OUT_DIR} ..."
@@ -18,7 +15,11 @@ for OUT_DIR in "${OUT_DIRS[@]}"; do
     --proto_path="${PROTO_DIR}" \
     --python_out="${OUT_DIR}" \
     --grpc_python_out="${OUT_DIR}" \
-    "${PROTO_DIR}/trace.proto"
+    "${PROTO_DIR}/openweave.proto"
 done
 
-echo "Done. Generated trace_pb2.py and trace_pb2_grpc.py in: ${OUT_DIRS[*]}"
+# grpc_tools emits `import openweave_pb2` (not relative), which only resolves
+# when the stub's own directory is on sys.path. That is true for each service
+# here, so no rewrite is needed — but it is why the stubs are generated INTO
+# each service rather than imported from proto/.
+echo "Done: openweave_pb2.py + openweave_pb2_grpc.py in ${OUT_DIRS[*]}"

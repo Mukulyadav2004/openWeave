@@ -87,6 +87,21 @@ class Base(DeclarativeBase):
     pass
 
 
+# Every JSONB column uses THIS instance, never the bare JSONB class.
+#
+# By default SQLAlchemy maps Python None onto JSON 'null' rather than SQL NULL.
+# That silently breaks merge-upserts: the worker's
+#     COALESCE(excluded.usage_details, observations.usage_details)
+# sees a JSON 'null', which is NOT SQL NULL, so COALESCE returns it and wipes
+# the value a previous event had already written. Found by an out-of-order
+# ingestion test where an observation_update landed before its create and the
+# create then erased the token usage the update had stored.
+#
+# none_as_null=True is a bind-parameter flag only — it does not change the DDL,
+# so switching to it needs no migration.
+JSON_B = JSONB(none_as_null=True)
+
+
 # --------------------------------------------------------------------------- #
 # Enums
 # --------------------------------------------------------------------------- #
@@ -261,7 +276,7 @@ class Trace(Base):
     input: Mapped[str | None] = mapped_column(Text, nullable=True)
     output: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    trace_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    trace_metadata: Mapped[dict | None] = mapped_column("metadata", JSON_B, nullable=True)
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     release: Mapped[str | None] = mapped_column(String, nullable=True)
     version: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -372,7 +387,7 @@ class Observation(Base):
     input: Mapped[str | None] = mapped_column(Text, nullable=True)
     output: Mapped[str | None] = mapped_column(Text, nullable=True)
     observation_metadata: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True
+        "metadata", JSON_B, nullable=True
     )
 
     # --- model + cost (GENERATION observations only) ---------------------- #
@@ -380,14 +395,14 @@ class Observation(Base):
     internal_model_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("models.id", ondelete="SET NULL"), nullable=True
     )
-    model_parameters: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    model_parameters: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
 
     # {"input": 1200, "output": 340, "cache_read": 800, "reasoning": 512}
-    provided_usage_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    usage_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    provided_usage_details: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
+    usage_details: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
     # {"input": 0.0036, "output": 0.0051}
-    provided_cost_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    cost_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    provided_cost_details: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
+    cost_details: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
     total_cost: Mapped[float | None] = mapped_column(Numeric(18, 12), nullable=True)
 
     # --- prompt linkage --------------------------------------------------- #
@@ -446,7 +461,7 @@ class ScoreConfig(Base):
     min_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     # [{"label": "helpful", "value": 1}, {"label": "harmful", "value": 0}]
-    categories: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    categories: Mapped[list | None] = mapped_column(JSON_B, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -565,7 +580,7 @@ class Model(Base):
         DateTime(timezone=True), nullable=True
     )
     tokenizer_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    tokenizer_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    tokenizer_config: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
     )
@@ -620,7 +635,7 @@ class Dataset(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     dataset_metadata: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True
+        "metadata", JSON_B, nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
@@ -656,9 +671,9 @@ class DatasetItem(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
 
     dataset_id: Mapped[str] = mapped_column(String, nullable=False)
-    input: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    expected_output: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    item_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    input: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
+    expected_output: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
+    item_metadata: Mapped[dict | None] = mapped_column("metadata", JSON_B, nullable=True)
 
     source_trace_id: Mapped[str | None] = mapped_column(String, nullable=True)
     source_observation_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -700,7 +715,7 @@ class DatasetRun(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Put the thing you changed in here: {"prompt_version": 7, "model": "..."}
-    run_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    run_metadata: Mapped[dict | None] = mapped_column("metadata", JSON_B, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
@@ -812,10 +827,10 @@ class EvaluatorVersion(Base):
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
-    model_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    model_params: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
 
-    variable_mapping: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    output_schema: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    variable_mapping: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
+    output_schema: Mapped[dict | None] = mapped_column(JSON_B, nullable=True)
 
     # What the produced Score is called and what shape it has.
     score_name: Mapped[str] = mapped_column(String, nullable=False)
@@ -857,7 +872,7 @@ class EvaluationRule(Base):
         SAEnum(EvalTarget, name="eval_target"), nullable=False
     )
     # e.g. [{"column": "name", "op": "=", "value": "checkout-agent"}]
-    filter: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    filter: Mapped[list | None] = mapped_column(JSON_B, nullable=True)
     sampling_rate: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
@@ -944,7 +959,7 @@ class IngestionDeadLetter(Base):
     project_id: Mapped[str | None] = mapped_column(String, nullable=True)
     event_id: Mapped[str | None] = mapped_column(String, nullable=True)
     stream_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON_B, nullable=False)
     error: Mapped[str] = mapped_column(Text, nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(

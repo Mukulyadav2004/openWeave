@@ -8,39 +8,23 @@ import "google/protobuf/timestamp.proto";
 // ============================================================================
 // OpenWeave ingestion protocol — v2
 //
-// Five changes from v1, each of which is worth being able to explain:
+//  1. BATCH, not one-RPC-per-trace. The SDK buffers and flushes N at a time.
+//  2. EVENT ENVELOPE (`oneof`), so new object types are additive.
+//  3. CREATE/UPDATE SPLIT — a span is recorded when it starts; end_time,
+//     output and token usage are not known until it finishes.
+//  4. event_id for idempotency; retried batches are safe.
+//  5. PARTIAL FAILURE — one bad span must not cost you the other 199.
 //
-//  1. BATCH, not one-RPC-per-trace. v1 made a blocking gRPC call inside the
-//     caller's hot path for every single trace. The SDK now buffers events and
-//     flushes N at a time from a background thread. This is the single biggest
-//     throughput and caller-latency win in the whole rewrite.
-//
-//  2. EVENT ENVELOPE with a `oneof` body. v1 could only ever express "a trace
-//     happened". Adding a new object type meant a new RPC and a new server
-//     path. New event types are now additive and wire-compatible.
-//
-//  3. CREATE/UPDATE SPLIT for observations. A span is recorded when it starts;
-//     its end_time, output, and token usage are not known until it finishes.
-//     v1's single flat message could not represent an in-flight span at all,
-//     which is why it could not represent nesting either.
-//
-//  4. event_id FOR IDEMPOTENCY. Client-generated UUID, unique per event. The
-//     worker upserts on it, so a retried batch after a network timeout is safe.
-//     v1 relied on a primary-key collision, which silently dropped legitimate
-//     updates to an existing span.
-//
-//  5. PARTIAL FAILURE. The response reports per-event errors instead of
-//     failing the whole batch. One malformed span in a batch of 200 must not
-//     cost you the other 199.
+// NOTE ON `optional`: every ObservationBody field below is marked `optional`.
+// That is load-bearing, not stylistic. Plain proto3 scalars have no field
+// presence — an unset string and "" are indistinguishable on the wire. Since
+// observation_update is applied as a SPARSE PATCH, the server must be able to
+// tell "this field was not sent" from "set this field to empty", or every
+// update would wipe the fields it did not carry. `optional` gives presence,
+// and MessageToDict then omits unset fields entirely.
 // ============================================================================
 
 
-// ---------------------------------------------------------------------------
-// Enums
-// ---------------------------------------------------------------------------
-
-// Mirrors ObservationType in db/models.py. UNSPECIFIED = 0 is required by
-// proto3 style and acts as the "SDK is older than the server" signal.
 enum ObservationType {
   OBSERVATION_TYPE_UNSPECIFIED = 0;
   OBSERVATION_TYPE_SPAN        = 1;  // generic unit of work
@@ -70,107 +54,95 @@ enum ScoreDataType {
 }
 
 
-// ---------------------------------------------------------------------------
-// Bodies
-// ---------------------------------------------------------------------------
-
-// A container for one agent run. Note how little is on it now — everything
-// that used to be here (input, output, latency, model, tokens) moved to
+// A container for one agent run. Note how little is on it — everything that
+// used to live here (input, output, latency, model, tokens) moved to
 // Observation, because an agent run has many of each.
 message TraceBody {
-  string id                              = 1;
-  string name                            = 2;
-  string user_id                         = 3;
-  string session_id                      = 4;
-  google.protobuf.Timestamp timestamp    = 5;
+  string id                                       = 1;
+  optional string name                            = 2;
+  optional string user_id                         = 3;
+  optional string session_id                      = 4;
+  optional google.protobuf.Timestamp timestamp    = 5;
 
-  string input                           = 6;
-  string output                          = 7;
+  optional string input                           = 6;
+  optional string output                          = 7;
 
-  google.protobuf.Struct metadata        = 8;
-  repeated string tags                   = 9;
+  optional google.protobuf.Struct metadata        = 8;
+  repeated string tags                            = 9;
 
-  // Code version that produced this trace. Cheap to send, and it is what makes
-  // "did quality regress after the v1.4 deploy?" answerable.
-  string release                         = 10;
-  string version                         = 11;
+  // Code version that produced this trace — makes "did quality regress after
+  // the v1.4 deploy?" answerable.
+  optional string release                         = 10;
+  optional string version                         = 11;
 
   // Set by the experiment runner so eval traffic can be excluded from
   // production cost and latency dashboards.
-  bool is_experiment                     = 12;
+  optional bool is_experiment                     = 12;
 }
 
 // One node in the trace tree. Used by BOTH observation_create and
-// observation_update — the server treats it as a sparse patch on update, so
-// the SDK only has to send the fields it learned.
+// observation_update; on update the server applies it as a sparse patch.
 message ObservationBody {
-  string id                                        = 1;
-  string trace_id                                  = 2;
-  // Empty string = root observation of the trace. THE field that makes
-  // waterfalls possible.
-  string parent_observation_id                     = 3;
+  string id                                                 = 1;
+  string trace_id                                           = 2;
+  // Unset = root observation. THE field that makes waterfalls possible.
+  optional string parent_observation_id                     = 3;
 
-  ObservationType type                             = 4;
-  string name                                      = 5;
+  optional ObservationType type                             = 4;
+  optional string name                                      = 5;
 
-  google.protobuf.Timestamp start_time             = 6;
-  google.protobuf.Timestamp end_time               = 7;
-  // When the first streamed token arrived. Server derives TTFT from this.
-  google.protobuf.Timestamp completion_start_time  = 8;
+  optional google.protobuf.Timestamp start_time             = 6;
+  optional google.protobuf.Timestamp end_time               = 7;
+  // When the first streamed token arrived; server derives TTFT from it.
+  optional google.protobuf.Timestamp completion_start_time  = 8;
 
-  ObservationLevel level                           = 9;
-  // Exception type + message when the wrapped call raised. v1's SDK emitted
-  // nothing at all on failure, so errors were invisible — this is the fix.
-  string status_message                            = 10;
+  optional ObservationLevel level                           = 9;
+  // Exception type + message when the wrapped call raised. The v1 SDK emitted
+  // nothing on failure, so errors were invisible — this is the fix.
+  optional string status_message                            = 10;
 
-  string input                                     = 11;
-  string output                                    = 12;
-  google.protobuf.Struct metadata                  = 13;
+  optional string input                                     = 11;
+  optional string output                                    = 12;
+  optional google.protobuf.Struct metadata                  = 13;
 
   // --- GENERATION only ---------------------------------------------------
-  string model                                     = 20;
-  google.protobuf.Struct model_parameters          = 21;
+  optional string model                                     = 20;
+  optional google.protobuf.Struct model_parameters          = 21;
 
   // Maps, not fixed fields: {"input": 1200, "output": 340, "cache_read": 800}.
   // New token types ship faster than schema migrations do.
-  map<string, uint64> usage_details                = 22;
-  // Optional. If the SDK knows the real cost, send it; otherwise the server
+  map<string, uint64> usage_details                         = 22;
+  // Optional. If the SDK knows the real cost it sends it; otherwise the server
   // resolves it from the price table. Both are stored separately so a bad
   // price table can be re-run without losing what the client reported.
-  map<string, double> cost_details                 = 23;
+  map<string, double> cost_details                          = 23;
 
-  // --- prompt linkage ----------------------------------------------------
-  string prompt_name                               = 24;
-  int32  prompt_version                            = 25;
+  optional string prompt_name                               = 24;
+  optional int32  prompt_version                            = 25;
 }
 
-// A quality measurement. Anchors to a trace, an observation within it, or a
-// dataset run item — exactly one.
+// A quality measurement. Anchors to a trace (optionally to one observation
+// inside it) or to a dataset run item — exactly one anchor.
 message ScoreBody {
-  string id                    = 1;
+  string id                            = 1;
 
-  string trace_id              = 2;
-  string observation_id        = 3;
-  string dataset_run_item_id   = 4;
+  optional string trace_id             = 2;
+  optional string observation_id       = 3;
+  optional string dataset_run_item_id  = 4;
 
-  string name                  = 5;
-  ScoreDataType data_type      = 6;
-  double value                 = 7;   // NUMERIC / BOOLEAN
-  string string_value          = 8;   // CATEGORICAL
+  string name                          = 5;
+  optional ScoreDataType data_type     = 6;
+  optional double value                = 7;   // NUMERIC / BOOLEAN
+  optional string string_value         = 8;   // CATEGORICAL
 
-  string comment               = 9;
-  // source is NOT on the wire: it is derived server-side from the credential.
-  // An SDK cannot claim its score came from a human annotator.
+  optional string comment              = 9;
+  // `source` is deliberately NOT on the wire — it is derived server-side from
+  // the credential, so an SDK cannot claim its score came from a human.
 }
 
-
-// ---------------------------------------------------------------------------
-// Envelope
-// ---------------------------------------------------------------------------
 
 message Event {
-  // Client-generated UUID, stable across retries. The worker upserts on this,
-  // which is what makes at-least-once delivery safe end to end.
+  // Client-generated UUID, stable across retries.
   string event_id                     = 1;
   // When the SDK created the event, not when the server received it. Needed to
   // order create/update pairs that arrive out of order over the queue.
@@ -186,44 +158,38 @@ message Event {
 
 message IngestBatchRequest {
   repeated Event events = 1;
-  // SDK name/version, e.g. "openweave-python/2.0.1". Log it — when someone
-  // reports bad data, the first question is always which SDK build produced it.
+  // e.g. "openweave-python/2.0.1". Log it — when someone reports bad data the
+  // first question is always which SDK build produced it.
   string sdk = 2;
 }
 
 message EventError {
   string event_id = 1;
-  // 400 validation, 403 wrong project, 429 rate limited, 500 server.
-  int32  code     = 2;
+  int32  code     = 2;   // 400 validation, 403 wrong project, 429, 500
   string message  = 3;
 }
 
 message IngestBatchResponse {
-  int32 accepted            = 1;
+  int32 accepted             = 1;
   repeated EventError errors = 2;
-}
-
-
-// ---------------------------------------------------------------------------
-// Service
-// ---------------------------------------------------------------------------
-
-service IngestionService {
-  // Auth: an `authorization: Basic base64(public_key:secret_key)` metadata
-  // header, verified by a server interceptor. project_id is resolved from the
-  // key and injected server-side — it is deliberately NOT a field on any
-  // message above, so a client cannot write into someone else's project.
-  rpc IngestBatch(IngestBatchRequest) returns (IngestBatchResponse);
-
-  // For k8s liveness/readiness probes. v1's deployments had no probes at all,
-  // so a wedged pod stayed in the Service's endpoint list indefinitely.
-  rpc Health(HealthRequest) returns (HealthResponse);
 }
 
 message HealthRequest {}
 
 message HealthResponse {
-  bool ok            = 1;
-  string version     = 2;
-  bool redis_ok      = 3;
+  bool   ok       = 1;
+  string version  = 2;
+  bool   redis_ok = 3;
+}
+
+
+service IngestionService {
+  // Auth: `authorization: Basic base64(public_key:secret_key)` metadata header.
+  // project_id is resolved from the key server-side and is deliberately NOT a
+  // field on any message above, so a client cannot write into another project.
+  rpc IngestBatch(IngestBatchRequest) returns (IngestBatchResponse);
+
+  // For k8s liveness/readiness probes. v1's deployments had none, so a wedged
+  // pod stayed in the Service's endpoint list indefinitely.
+  rpc Health(HealthRequest) returns (HealthResponse);
 }

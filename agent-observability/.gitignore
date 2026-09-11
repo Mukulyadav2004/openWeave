@@ -27,3 +27,5 @@ env/
 # Env files
 .env
 *.local
+**/openweave_pb2.py
+**/openweave_pb2_grpc.py
