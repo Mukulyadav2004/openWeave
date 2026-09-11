@@ -40,6 +40,7 @@ import logging
 import os
 import signal
 import socket
+import sys
 from datetime import datetime, timezone
 
 import redis.asyncio as redis
@@ -48,7 +49,12 @@ from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from models import IngestionDeadLetter, Observation, Score, Trace
+# shared/ holds code used by more than one service (auth, pricing). Adding it
+# to sys.path here beats keeping duplicate copies per service in sync.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
+
+from models import IngestionDeadLetter, Observation, Score, Trace  # noqa: E402
+from pricing import ModelPriceCache, resolve_costs  # noqa: E402
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -75,6 +81,15 @@ CLAIM_MIN_IDLE_MS = int(os.getenv("CLAIM_MIN_IDLE_MS", "60000"))
 CLAIM_EVERY_N_LOOPS = int(os.getenv("CLAIM_EVERY_N_LOOPS", "10"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 RETRY_KEY = "worker:retries"
+
+# Traces whose ingest finished get announced here; the eval worker consumes it.
+EVAL_STREAM = os.getenv("EVAL_STREAM", "evals")
+EVAL_STREAM_MAXLEN = int(os.getenv("EVAL_STREAM_MAXLEN", "200000"))
+EVAL_ENQUEUE = os.getenv("EVAL_ENQUEUE", "1") == "1"
+
+# Shared across batches: the price tables change roughly never, and a per-batch
+# reload would put two queries in front of every write.
+PRICE_CACHE = ModelPriceCache(ttl_seconds=int(os.getenv("PRICE_CACHE_TTL", "300")))
 
 
 # --------------------------------------------------------------------------- #
@@ -276,11 +291,14 @@ def _group_by_sent(pairs):
     return groups
 
 
-async def apply_events(conn, events: list[dict]) -> None:
+async def apply_events(conn, events: list[dict], price_cache=None) -> dict:
     """Write one batch. Pure DB logic, no Redis — which makes it unit testable.
 
     Ordering within the batch matters: traces (real and stub) go first so the
     trace list never shows an observation whose parent row does not exist yet.
+
+    Returns the keys it touched, so the caller can price the generations and
+    announce the traces for evaluation without re-deriving them.
     """
     key = ("project_id", "id")
     traces, obs_create, obs_update, scores = [], [], [], []
@@ -351,6 +369,24 @@ async def apply_events(conn, events: list[dict]) -> None:
             stmt.on_conflict_do_nothing(index_elements=["project_id", "id"]), scores
         )
 
+    touched_observations = {
+        (r["project_id"], r["id"]) for r, _ in obs_create
+    } | {
+        (e["project_id"], e["body"]["id"]) for e in obs_update
+    }
+
+    # Cost is resolved AFTER the write, in the same transaction, because a
+    # generation's model name and its token usage usually arrive in different
+    # events (model on the create, usage on the update). Pricing during row
+    # building would score half of them at zero.
+    if price_cache is not None and touched_observations:
+        await resolve_costs(conn, price_cache, touched_observations)
+
+    return {
+        "observations": touched_observations,
+        "traces": {(r["project_id"], r["id"]) for r, _ in traces} | referenced,
+    }
+
 
 # --------------------------------------------------------------------------- #
 # Stream plumbing
@@ -411,7 +447,9 @@ async def handle_batch(engine, redis_client, messages) -> None:
 
     try:
         async with engine.begin() as conn:
-            await apply_events(conn, [event for _, event in parsed])
+            touched = await apply_events(
+                conn, [event for _, event in parsed], PRICE_CACHE
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("batch of %d failed (%s); retrying individually",
                        len(parsed), exc)
@@ -420,7 +458,7 @@ async def handle_batch(engine, redis_client, messages) -> None:
         for message_id, event in parsed:
             try:
                 async with engine.begin() as conn:
-                    await apply_events(conn, [event])
+                    one = await apply_events(conn, [event], PRICE_CACHE)
             except Exception as inner:  # noqa: BLE001
                 count = await redis_client.hincrby(RETRY_KEY, message_id, 1)
                 if count >= MAX_RETRIES:
@@ -434,13 +472,42 @@ async def handle_batch(engine, redis_client, messages) -> None:
                 continue
             await redis_client.xack(STREAM_NAME, GROUP_NAME, message_id)
             await redis_client.hdel(RETRY_KEY, message_id)
+            await announce_for_eval(redis_client, one["traces"])
         return
 
     ids = [message_id for message_id, _ in parsed]
     await redis_client.xack(STREAM_NAME, GROUP_NAME, *ids)
     if ids:
         await redis_client.hdel(RETRY_KEY, *ids)
+    await announce_for_eval(redis_client, touched["traces"])
     logger.info("committed %d event(s)", len(ids))
+
+
+async def announce_for_eval(redis_client, traces: set[tuple[str, str]]) -> None:
+    """Tell the eval worker these traces received data.
+
+    Announced AFTER the commit, never before: a trace the eval worker cannot
+    read yet would just bounce around its settle loop. Duplicates are expected
+    and cheap — one message per batch per trace — and the eval worker dedupes
+    with a SETNX, because a trace's spans arrive across many batches.
+    """
+    if not (EVAL_ENQUEUE and traces):
+        return
+    try:
+        async with redis_client.pipeline(transaction=False) as pipe:
+            for project_id, trace_id in traces:
+                pipe.xadd(
+                    EVAL_STREAM,
+                    {"project_id": project_id, "trace_id": trace_id},
+                    maxlen=EVAL_STREAM_MAXLEN,
+                    approximate=True,
+                )
+            await pipe.execute()
+    except Exception as exc:  # noqa: BLE001
+        # Evaluation is best-effort relative to ingestion. Losing an eval
+        # announcement must never cost us the trace itself.
+        logger.warning("failed to announce %d trace(s) for eval: %s",
+                       len(traces), exc)
 
 
 async def reclaim_stranded(engine, redis_client) -> int:
