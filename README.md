@@ -7,10 +7,7 @@ decorator, get a nested trace with per-step token cost, have an LLM judge score
 it automatically, and re-run a fixed dataset to find out whether your last
 prompt change made things better or worse.
 
-<!-- TODO: take a screenshot of your own data and uncomment this line. See
-     "Screenshots" at the bottom.
 ![Trace waterfall](agent-observability/docs/screenshot-trace.png)
--->
 
 ---
 
@@ -218,7 +215,10 @@ API binds `0.0.0.0` on `$PORT` and applies the migration on start, and
 while every write still needs one. The ingestion server speaks gRPC rather than
 HTTP, so on Railway it needs a TCP proxy rather than a domain.
 
-<!-- TODO: paste the live demo URL here once it is deployed. -->
+**Live demo: <https://api-production-aef4.up.railway.app>** — read-only, no key
+needed. Deployed on Railway as four services (api, ingestion, worker running both
+consumers, plus Postgres and Redis), all from this one image. Ingestion is at
+`caboose.proxy.rlwy.net:36454` and needs a key.
 
 ## Not built, on purpose
 
@@ -285,11 +285,9 @@ sits at the median on nearly every metric. Reproduce with
 
 ## Screenshots
 
-Regenerate these from your own data before committing them:
-
-1. Start the stack and the UI, run some real traffic through it.
-2. Screenshot the trace view with a trace that has a nested tool call.
-3. Save to `agent-observability/docs/screenshot-trace.png`.
+`docs/screenshot-trace.png` is the live demo above, captured from real traffic
+through the deployed stack. To regenerate it after a UI change, open the demo (or
+your own instance) at `/#trace=<trace-id>` and screenshot the trace view.
 
 ---
 
