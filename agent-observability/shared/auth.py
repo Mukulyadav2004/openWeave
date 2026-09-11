@@ -209,9 +209,8 @@ class ApiKeyVerifier:
         if self._redis is None:
             return
         try:
-            await self._redis.setex(
+            await self._redis.set(
                 CACHE_PREFIX + key_hash,
-                self._ttl,
                 json.dumps(
                     {
                         "project_id": ctx.project_id,
@@ -220,6 +219,7 @@ class ApiKeyVerifier:
                         "expires_at": expires_at.isoformat() if expires_at else None,
                     }
                 ),
+                ex=self._ttl,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("api key cache write failed: %s", exc)

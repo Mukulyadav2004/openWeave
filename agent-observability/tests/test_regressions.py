@@ -242,7 +242,7 @@ class FakeRedis:
     async def get(self, k):
         return self.store.get(k)
 
-    async def setex(self, k, _ttl, v):
+    async def set(self, k, v, ex=None):
         self.store[k] = v
 
     async def delete(self, k):
