@@ -1,10 +1,6 @@
-# One image for every service. Each service picks its process with a start
-# command (docker-compose.yml and the Railway services use exactly these):
-#
-#   api          (the default CMD below)
-#   ingestion    python ingestion-server/server.py
-#   worker       python worker/worker.py
-#   eval-worker  python evaluator/eval_worker.py
+# One image for every service. Each service sets SERVICE_ROLE to pick its
+# process — api (default), ingestion, worker, eval-worker, or worker+eval for
+# hosts that limit how many services a project may run. See scripts/start.sh.
 #
 # Both servers bind 0.0.0.0 by default, which every container runtime can reach.
 # On a host that routes to containers over IPv6 (Railway's private network), set
@@ -22,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN bash proto/generate.sh
+RUN bash proto/generate.sh && chmod +x scripts/start.sh
 
 EXPOSE 8000 50051
-CMD ["sh", "-c", "cd worker && alembic upgrade head && cd .. && exec uvicorn main:app --app-dir api-server --host ${UVICORN_HOST:-0.0.0.0} --port ${PORT:-8000}"]
+CMD ["bash", "scripts/start.sh"]

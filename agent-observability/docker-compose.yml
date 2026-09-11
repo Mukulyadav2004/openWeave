@@ -1,6 +1,8 @@
 # `docker compose up -d postgres redis` starts only the databases, for running the
 # services from a virtualenv. `docker compose up -d` runs the whole stack from the
-# same image Railway deploys, with the UI at http://localhost:8000.
+# same image the deployment runs, with the UI at http://localhost:8000.
+#
+# Every app service is the same image; SERVICE_ROLE picks the process.
 
 x-app: &app
   build: .
@@ -58,34 +60,32 @@ services:
 
   api:
     <<: *app
-    command: >-
-      sh -c "cd worker && alembic upgrade head && cd .. &&
-             exec uvicorn main:app --app-dir api-server --host 0.0.0.0 --port 8000"
     environment:
       <<: *app-env
+      SERVICE_ROLE: api
       PUBLIC_DEMO_PROJECT: ${PUBLIC_DEMO_PROJECT:-}
     ports:
       - "8000:8000"
 
   ingestion:
     <<: *app
-    command: python ingestion-server/server.py
     environment:
       <<: *app-env
+      SERVICE_ROLE: ingestion
     ports:
       - "50051:50051"
 
   worker:
     <<: *app
-    command: python worker/worker.py
     environment:
       <<: *app-env
+      SERVICE_ROLE: worker
 
   eval-worker:
     <<: *app
-    command: python evaluator/eval_worker.py
     environment:
       <<: *app-env
+      SERVICE_ROLE: eval-worker
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OLLAMA_HOST: http://ollama:11434
 
