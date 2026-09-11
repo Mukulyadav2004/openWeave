@@ -1,2 +1,0 @@
-httpx
-psycopg2-binary

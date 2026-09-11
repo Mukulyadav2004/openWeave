@@ -46,8 +46,12 @@ logger = logging.getLogger("ingestion-server")
 
 VERSION = "2.0.0"
 GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+# 0.0.0.0 is reachable from every container runtime; a host that routes to
+# containers over IPv6 (Railway's private network) needs GRPC_BIND=:: instead.
+GRPC_BIND = os.getenv("GRPC_BIND", "0.0.0.0")
+# REDIS_URL carries the password when the host requires one (Railway's does).
+REDIS_URL = os.getenv("REDIS_URL") or "redis://{}:{}".format(
+    os.getenv("REDIS_HOST", "localhost"), os.getenv("REDIS_PORT", "6379"))
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://openweave:openweave@localhost:5432/openweave"
 ).replace("+asyncpg", "").replace("+psycopg2", "")
@@ -211,9 +215,7 @@ class IngestionService(openweave_pb2_grpc.IngestionServiceServicer):
 
 
 async def serve() -> None:
-    redis_client = redis.Redis(
-        host=REDIS_HOST, port=REDIS_PORT, decode_responses=True
-    )
+    redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10)
     verifier = ApiKeyVerifier(pool, redis_client)
 
@@ -221,7 +223,7 @@ async def serve() -> None:
     openweave_pb2_grpc.add_IngestionServiceServicer_to_server(
         IngestionService(redis_client, verifier), server
     )
-    server.add_insecure_port(f"[::]:{GRPC_PORT}")
+    server.add_insecure_port(f"{GRPC_BIND}:{GRPC_PORT}")
 
     logger.info("ingestion server v%s on :%d -> stream=%s", VERSION, GRPC_PORT, STREAM_NAME)
     await server.start()

@@ -1,5 +1,0 @@
-redis[asyncio]
-asyncpg
-sqlalchemy
-psycopg2-binary
-alembic

@@ -1,4 +1,0 @@
-grpcio
-grpcio-tools
-redis[asyncio]
-protobuf

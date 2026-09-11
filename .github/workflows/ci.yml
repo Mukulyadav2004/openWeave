@@ -94,3 +94,13 @@ jobs:
         # enforced: a build that goes red over line length teaches people to
         # ignore the build.
         run: ruff check agent-observability --select E9,F63,F7,F82 --output-format=github
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the service image
+        # The image every deployed service runs; a broken build should fail here,
+        # not on the first deploy.
+        run: docker build -t openweave agent-observability

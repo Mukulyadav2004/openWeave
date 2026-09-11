@@ -20,6 +20,9 @@ config = context.config
 database_url = os.getenv("DATABASE_URL")
 if database_url:
     database_url = database_url.replace("+asyncpg", "+psycopg2")
+    # SQLAlchemy rejects the postgres:// scheme some hosts still hand out.
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql://" + database_url[len("postgres://"):]
     config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:

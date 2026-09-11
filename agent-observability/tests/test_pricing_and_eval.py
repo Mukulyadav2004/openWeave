@@ -219,6 +219,35 @@ async def test_price_cache_loads_on_first_use_right_after_boot(db, monkeypatch):
 # --------------------------------------------------------------------------- #
 # Judge helpers
 # --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_gemini_provider_uses_the_openai_compatible_endpoint(monkeypatch):
+    """Gemini speaks the OpenAI chat-completions shape, so it is the same caller
+    with a different base URL and key."""
+    import judge
+
+    seen = {}
+
+    async def fake_call(base_url, api_key, model, prompt, params):
+        seen.update(base_url=base_url, api_key=api_key, model=model)
+        return '{"score": 0.7}'
+
+    monkeypatch.setattr(judge, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(judge, "_chat_completions", fake_call)
+
+    assert await judge.call_judge("gemini", "gemini-3.1-flash-lite", "grade") == {"score": 0.7}
+    assert seen["base_url"].endswith("/v1beta/openai")
+    assert seen["api_key"] == "test-key"
+
+
+@pytest.mark.asyncio
+async def test_gemini_without_a_key_is_a_recorded_judge_error(monkeypatch):
+    import judge
+
+    monkeypatch.setattr(judge, "GEMINI_API_KEY", "")
+    with pytest.raises(JudgeError, match="GEMINI_API_KEY"):
+        await judge.call_judge("gemini", "gemini-3.1-flash-lite", "grade")
+
+
 def test_render_prompt_leaves_literal_json_alone():
     out = render_prompt('Return {"score": 0.5} for {{name}}', {"name": "x"})
     assert out == 'Return {"score": 0.5} for x'

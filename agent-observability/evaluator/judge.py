@@ -26,6 +26,10 @@ REQUEST_TIMEOUT = float(os.getenv("JUDGE_TIMEOUT", "60"))
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GEMINI_BASE_URL = os.getenv(
+    "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"
+)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 
 class JudgeError(Exception):
@@ -72,11 +76,12 @@ async def _call_ollama(model: str, prompt: str, params: dict) -> str:
         return response.json().get("response", "")
 
 
-async def _call_openai(model: str, prompt: str, params: dict) -> str:
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"} if OPENAI_API_KEY else {}
+async def _chat_completions(base_url: str, api_key: str, model: str, prompt: str,
+                            params: dict) -> str:
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         response = await client.post(
-            f"{OPENAI_BASE_URL}/chat/completions",
+            f"{base_url.rstrip('/')}/chat/completions",
             headers=headers,
             json={
                 "model": model,
@@ -89,7 +94,19 @@ async def _call_openai(model: str, prompt: str, params: dict) -> str:
         return response.json()["choices"][0]["message"]["content"]
 
 
-PROVIDERS = {"ollama": _call_ollama, "openai": _call_openai}
+async def _call_openai(model: str, prompt: str, params: dict) -> str:
+    return await _chat_completions(OPENAI_BASE_URL, OPENAI_API_KEY, model, prompt, params)
+
+
+async def _call_gemini(model: str, prompt: str, params: dict) -> str:
+    # Gemini's OpenAI-compatible endpoint: the same request shape, with its own
+    # base URL and key.
+    if not GEMINI_API_KEY:
+        raise JudgeError("GEMINI_API_KEY is not set")
+    return await _chat_completions(GEMINI_BASE_URL, GEMINI_API_KEY, model, prompt, params)
+
+
+PROVIDERS = {"ollama": _call_ollama, "openai": _call_openai, "gemini": _call_gemini}
 
 
 async def call_judge(provider: str, model: str, prompt: str,

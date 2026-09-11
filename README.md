@@ -7,8 +7,10 @@ decorator, get a nested trace with per-step token cost, have an LLM judge score
 it automatically, and re-run a fixed dataset to find out whether your last
 prompt change made things better or worse.
 
-<!-- TODO: replace with your own screenshot. See "Screenshots" at the bottom. -->
+<!-- TODO: take a screenshot of your own data and uncomment this line. See
+     "Screenshots" at the bottom.
 ![Trace waterfall](agent-observability/docs/screenshot-trace.png)
+-->
 
 ---
 
@@ -72,27 +74,39 @@ Everything lives under `agent-observability/`:
 | `api-server/` | Read API, datasets, run comparison |
 | `ui/` | Single-file trace explorer (no build step) |
 | `shared/` | Auth and pricing, used by more than one service |
-| `tests/` | 39 tests, most of them regressions for bugs found in real runs |
+| `tests/` | 44 tests, most of them regressions for bugs found in real runs |
 
 ## Quickstart
 
+The whole stack, from the same image the deployment runs:
+
 ```bash
 cd agent-observability
+docker compose up -d --build     # Postgres, Redis, ingestion, worker, eval worker, API
+docker compose exec api python scripts/bootstrap.py demo   # prints your API keys — once
+docker compose exec api python scripts/seed_models.py      # model price table
+docker compose exec api python scripts/seed_evaluator.py demo \
+    --provider gemini --model gemini-3.1-flash-lite        # without this nothing is scored
+```
+
+The UI is at <http://localhost:8000>, served by the API itself. Scoring needs a
+judge: export `GEMINI_API_KEY` before `docker compose up`, or seed the evaluator
+with `--provider ollama --model llama3.2` and run Ollama yourself.
+
+To run the services from a virtualenv instead, which is the loop you want while
+developing, start only the databases:
+
+```bash
+docker compose up -d postgres redis
 pip install -r requirements.txt
 bash proto/generate.sh
-docker compose up -d postgres redis ollama   # leave out ollama if you run it natively
 export DATABASE_URL=postgresql+asyncpg://agentobs:agentobs@localhost:5432/agentobs
-
 cd worker && alembic upgrade head && cd ..
-
-python scripts/bootstrap.py demo        # prints your API keys — once
-python scripts/seed_models.py           # model price table
-python scripts/seed_evaluator.py demo   # the judge; without this nothing is scored
 
 python ingestion-server/server.py &
 python worker/worker.py &
 python evaluator/eval_worker.py &
-CORS_ORIGINS=http://localhost:8080 uvicorn main:app --app-dir api-server --port 8000 &
+uvicorn main:app --app-dir api-server --port 8000 &
 ```
 
 Instrument something:
@@ -119,14 +133,9 @@ def handle(question):
     return answer(question, search(question))   # nests automatically
 ```
 
-Open the UI:
-
-```bash
-cd ui && python -m http.server 8080
-```
-
-Then open <http://localhost:8080> — `localhost` exactly, since the API only
-allows the origins listed in `CORS_ORIGINS` and `127.0.0.1` is a different one.
+The UI is served by the API itself at <http://localhost:8000>, so there is no
+second server and no CORS to configure. A trace deep-links as
+`/#trace=<trace-id>`.
 
 ## The experiment loop
 
@@ -191,13 +200,25 @@ TEST_DATABASE_URL=postgresql+asyncpg://agentobs:agentobs@localhost:5432/agentobs
 
 > The suite calls `drop_all`. Point it at a **dedicated** test database.
 
-39 tests. Most are regressions for bugs found running the thing end to end —
+44 tests. Most are regressions for bugs found running the thing end to end —
 span closes rejected by a CHECK constraint, stub traces overwriting real ones,
 an upsert clobbering fields the event never sent, a cached API key skipping its
 expiry check, a debounce that a burst of announcements walked straight through,
 an aggregate over a fan-out join double-counting cost, a price cache that
 skipped its first load when the process started near boot. Each one fails on the
 code as it was and passes on the code as it is.
+
+## Deploy
+
+`agent-observability/Dockerfile` builds one image; each service runs a different
+command from it (API, ingestion, worker, eval worker), alongside Postgres and
+Redis. The services read `DATABASE_URL` and `REDIS_URL` (password included), the
+API binds `0.0.0.0` on `$PORT` and applies the migration on start, and
+`PUBLIC_DEMO_PROJECT=<project>` lets anyone read that one project without a key
+while every write still needs one. The ingestion server speaks gRPC rather than
+HTTP, so on Railway it needs a TCP proxy rather than a domain.
+
+<!-- TODO: paste the live demo URL here once it is deployed. -->
 
 ## Not built, on purpose
 
@@ -272,6 +293,4 @@ Regenerate these from your own data before committing them:
 
 ---
 
-Built with Python, gRPC, Redis Streams, PostgreSQL, SQLAlchemy and FastAPI. The
-`k8s/` manifests and `spark-jobs/` predate the v2 rewrite and have not been
-updated for it.
+Built with Python, gRPC, Redis Streams, PostgreSQL, SQLAlchemy and FastAPI.

@@ -62,12 +62,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger("worker")
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+# REDIS_URL carries the password when the host requires one (Railway's does).
+REDIS_URL = os.getenv("REDIS_URL") or "redis://{}:{}".format(
+    os.getenv("REDIS_HOST", "localhost"), os.getenv("REDIS_PORT", "6379"))
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://openweave:openweave@localhost:5432/openweave",
 )
+# Hosted Postgres hands out postgres:// or postgresql:// URLs; SQLAlchemy's
+# asyncio engine needs the asyncpg driver named explicitly.
+if DATABASE_URL.startswith(("postgres://", "postgresql://")):
+    DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL.split("://", 1)[1]
 
 STREAM_NAME = os.getenv("STREAM_NAME", "events")
 GROUP_NAME = os.getenv("GROUP_NAME", "workers")
@@ -530,7 +535,7 @@ async def reclaim_stranded(engine, redis_client) -> int:
 
 
 async def run() -> None:
-    redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     engine = create_async_engine(DATABASE_URL, pool_size=5, max_overflow=5)
 
     await ensure_group(redis_client)

@@ -65,8 +65,8 @@ from openweave import OpenWeave  # noqa: E402
 GRPC_HOST = os.getenv("OPENWEAVE_HOST", "localhost")
 GRPC_PORT = int(os.getenv("OPENWEAVE_PORT", "50051"))
 API_BASE = os.getenv("API_BASE", "http://localhost:8000").rstrip("/")
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_URL = os.getenv("REDIS_URL") or "redis://{}:{}".format(
+    os.getenv("REDIS_HOST", "localhost"), os.getenv("REDIS_PORT", "6379"))
 DATABASE_URL = (
     os.getenv("DATABASE_URL", "postgresql://openweave:openweave@localhost:5432/openweave")
     .replace("+asyncpg", "").replace("+psycopg2", "")
@@ -153,7 +153,7 @@ async def stream_backlog(client) -> int:
 async def wait_for_idle_stream(timeout_s: float = 300.0) -> float:
     """Wait for the worker to catch up, so one stage's backlog is not measured as
     the next stage's latency. Returns the seconds waited."""
-    client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     start = time.perf_counter()
     try:
         while time.perf_counter() - start < timeout_s:
@@ -287,7 +287,7 @@ async def bench_worker_drain(burst: int, kind: str = "GENERATION",
     Run once for GENERATION and once for plain SPAN events: generations also go
     through cost resolution, so the gap between the two is what pricing costs.
     """
-    client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     events = make_events(burst, kind=kind)
 
     async with grpc.aio.insecure_channel(f"{GRPC_HOST}:{GRPC_PORT}") as channel:
@@ -366,7 +366,7 @@ async def bench_auth_cache(n: int) -> dict:
     """
     import hashlib
 
-    client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     salt = os.getenv("OPENWEAVE_SALT", "openweave-dev-salt")
     cache_key = "apikey:" + hashlib.sha256((SECRET_KEY + salt).encode()).hexdigest()
 

@@ -30,6 +30,7 @@ import asyncpg
 import redis.asyncio as redis
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
@@ -39,8 +40,13 @@ VERSION = "2.0.0"
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://openweave:openweave@localhost:5432/openweave"
 ).replace("+asyncpg", "").replace("+psycopg2", "")
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+# REDIS_URL carries the password when the host requires one (Railway's does).
+REDIS_URL = os.getenv("REDIS_URL") or "redis://{}:{}".format(
+    os.getenv("REDIS_HOST", "localhost"), os.getenv("REDIS_PORT", "6379"))
+# When set, a request that sends no credentials may READ this one project, so a
+# hosted demo can be browsed without handing out a key. Writes always need one.
+PUBLIC_DEMO_PROJECT = os.getenv("PUBLIC_DEMO_PROJECT", "")
+UI_INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ui", "index.html")
 # Explicit origins only. "*" with credentials is rejected by browsers anyway and
 # reads as carelessness in review.
 CORS_ORIGINS = [o for o in os.getenv("CORS_ORIGINS", "").split(",") if o]
@@ -49,9 +55,9 @@ CORS_ORIGINS = [o for o in os.getenv("CORS_ORIGINS", "").split(",") if o]
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=2, max_size=10)
-    app.state.redis = redis.Redis(host=REDIS_HOST, port=REDIS_PORT,
-                                  decode_responses=True)
+    app.state.redis = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     app.state.verifier = ApiKeyVerifier(app.state.pool, app.state.redis)
+    app.state.demo_project_id = None
     try:
         yield
     finally:
@@ -68,13 +74,34 @@ if CORS_ORIGINS:
     )
 
 
-async def auth(request: Request) -> AuthContext:
+async def write_auth(request: Request) -> AuthContext:
+    """Every write needs a real key, whether or not a public demo is enabled."""
     try:
         return await request.app.state.verifier.verify(
             request.headers.get("authorization")
         )
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from None
+
+
+async def _demo_project_id(app) -> str | None:
+    # Looked up on first use rather than at startup: the demo project is usually
+    # created after the API first boots against a freshly migrated database.
+    if app.state.demo_project_id is None:
+        app.state.demo_project_id = await app.state.pool.fetchval(
+            "SELECT id FROM projects WHERE name = $1", PUBLIC_DEMO_PROJECT)
+    return app.state.demo_project_id
+
+
+async def auth(request: Request) -> AuthContext:
+    """Reads. With PUBLIC_DEMO_PROJECT set, a request that sends no credentials
+    reads that one project. Credentials that ARE sent are verified as usual and
+    never fall back to the demo, so a wrong key is still a 401."""
+    if PUBLIC_DEMO_PROJECT and not request.headers.get("authorization"):
+        project_id = await _demo_project_id(request.app)
+        if project_id is not None:
+            return AuthContext(project_id=project_id, api_key_id="public-demo")
+    return await write_auth(request)
 
 
 def _json(value):
@@ -97,7 +124,16 @@ async def health(request: Request):
         await request.app.state.pool.fetchval("SELECT 1")
     except Exception:  # noqa: BLE001
         ok = False
-    return {"ok": ok, "version": VERSION, "auth_cache": STATS}
+    return {"ok": ok, "version": VERSION, "public_demo": bool(PUBLIC_DEMO_PROJECT),
+            "auth_cache": STATS}
+
+
+@app.get("/", include_in_schema=False)
+async def ui():
+    """The single-file UI, served from the API's own origin so it needs no CORS."""
+    if not os.path.exists(UI_INDEX):
+        raise HTTPException(status_code=404, detail="ui/index.html not found")
+    return FileResponse(UI_INDEX)
 
 
 # --------------------------------------------------------------------------- #
@@ -292,7 +328,7 @@ async def _dataset_id(pool, project_id: str, name: str) -> str:
 
 @app.post("/datasets", status_code=201)
 async def create_dataset(body: DatasetIn, request: Request,
-                         ctx: AuthContext = Depends(auth)):
+                         ctx: AuthContext = Depends(write_auth)):
     row = await request.app.state.pool.fetchrow("""
         INSERT INTO datasets (project_id, id, name, description, metadata,
                               created_at, updated_at)
@@ -322,7 +358,7 @@ async def list_datasets(request: Request, ctx: AuthContext = Depends(auth)):
 
 @app.post("/datasets/{name}/items", status_code=201)
 async def add_item(name: str, body: DatasetItemIn, request: Request,
-                   ctx: AuthContext = Depends(auth)):
+                   ctx: AuthContext = Depends(write_auth)):
     pool = request.app.state.pool
     dataset_id = await _dataset_id(pool, ctx.project_id, name)
     row = await pool.fetchrow("""
@@ -344,7 +380,7 @@ async def add_item(name: str, body: DatasetItemIn, request: Request,
 
 @app.post("/datasets/{name}/items/from-trace/{trace_id}", status_code=201)
 async def add_item_from_trace(name: str, trace_id: str, request: Request,
-                              ctx: AuthContext = Depends(auth)):
+                              ctx: AuthContext = Depends(write_auth)):
     """Turn a production trace into a regression test.
 
     This is the endpoint that makes datasets actually get built. Datasets that
@@ -401,7 +437,7 @@ async def list_items(name: str, request: Request, ctx: AuthContext = Depends(aut
 # --------------------------------------------------------------------------- #
 @app.post("/datasets/{name}/runs", status_code=201)
 async def create_run(name: str, body: RunIn, request: Request,
-                     ctx: AuthContext = Depends(auth)):
+                     ctx: AuthContext = Depends(write_auth)):
     pool = request.app.state.pool
     dataset_id = await _dataset_id(pool, ctx.project_id, name)
     row = await pool.fetchrow("""
@@ -418,7 +454,7 @@ async def create_run(name: str, body: RunIn, request: Request,
 
 @app.post("/datasets/{name}/runs/{run_name}/items", status_code=201)
 async def link_run_item(name: str, run_name: str, body: RunItemIn, request: Request,
-                        ctx: AuthContext = Depends(auth)):
+                        ctx: AuthContext = Depends(write_auth)):
     """Record that running dataset item X during run Y produced trace Z."""
     pool = request.app.state.pool
     dataset_id = await _dataset_id(pool, ctx.project_id, name)

@@ -1,3 +1,20 @@
+# `docker compose up -d postgres redis` starts only the databases, for running the
+# services from a virtualenv. `docker compose up -d` runs the whole stack from the
+# same image Railway deploys, with the UI at http://localhost:8000.
+
+x-app: &app
+  build: .
+  image: openweave
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://agentobs:agentobs@postgres:5432/agentobs
+  REDIS_URL: redis://redis:6379
+
 services:
   postgres:
     image: postgres:15
@@ -29,58 +46,48 @@ services:
       timeout: 5s
       retries: 5
 
+  # Only with `docker compose --profile ollama up -d`.
   ollama:
     image: ollama/ollama:latest
     container_name: agentobs-ollama
+    profiles: ["ollama"]
     ports:
       - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
 
-  ingestion-server:
-    build:
-      context: ./ingestion-server
-    container_name: agentobs-ingestion-server
+  api:
+    <<: *app
+    command: >-
+      sh -c "cd worker && alembic upgrade head && cd .. &&
+             exec uvicorn main:app --app-dir api-server --host 0.0.0.0 --port 8000"
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-    ports:
-      - "50051:50051"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  worker:
-    build:
-      context: ./worker
-    container_name: agentobs-worker
-    environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      DATABASE_URL: postgresql+asyncpg://agentobs:agentobs@postgres:5432/agentobs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  api-server:
-    build:
-      context: .
-      dockerfile: api-server/Dockerfile
-    container_name: agentobs-api-server
-    environment:
-      DATABASE_URL: postgresql://agentobs:agentobs@postgres:5432/agentobs
-      OLLAMA_HOST: http://ollama:11434
+      <<: *app-env
+      PUBLIC_DEMO_PROJECT: ${PUBLIC_DEMO_PROJECT:-}
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+
+  ingestion:
+    <<: *app
+    command: python ingestion-server/server.py
+    environment:
+      <<: *app-env
+    ports:
+      - "50051:50051"
+
+  worker:
+    <<: *app
+    command: python worker/worker.py
+    environment:
+      <<: *app-env
+
+  eval-worker:
+    <<: *app
+    command: python evaluator/eval_worker.py
+    environment:
+      <<: *app-env
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OLLAMA_HOST: http://ollama:11434
 
 volumes:
   postgres-data:

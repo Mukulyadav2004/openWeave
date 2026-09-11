@@ -329,7 +329,8 @@ async function api(path, params) {
   const url = new URL(state.base + path);
   if (params) for (const [k,v] of Object.entries(params))
     if (v !== "" && v != null) url.searchParams.set(k,v);
-  const res = await fetch(url, { headers:{ authorization: state.auth } });
+  // No header at all in public-demo mode: an empty one would still be sent.
+  const res = await fetch(url, state.auth ? { headers:{ authorization: state.auth } } : {});
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }
@@ -343,20 +344,23 @@ function setConn(ok, text) {
 async function connect() {
   state.base = $("api").value.replace(/\/$/, "");
   const pk = $("pk").value.trim(), sk = $("sk").value.trim();
-  state.auth = "Basic " + btoa(pk + ":" + sk);
+  // Without keys the API only answers if it serves a public read-only demo.
+  state.auth = pk && sk ? "Basic " + btoa(pk + ":" + sk) : "";
   $("conn-err").classList.add("hidden");
   try {
     await api("/traces", { limit: 1 });
-    setConn(true, "connected");
-    store.set("ow", JSON.stringify({ base: state.base, pk, sk }));
+    setConn(true, state.auth ? "connected" : "public demo · read-only");
+    if (state.auth) store.set("ow", JSON.stringify({ base: state.base, pk, sk }));
     $("settings").classList.add("hidden");
     $("view-traces").classList.remove("hidden");
     await Promise.all([loadTraces(), loadDatasets()]);
+    const linked = new URLSearchParams(location.hash.slice(1)).get("trace");
+    if (linked) openTrace(linked);
   } catch (e) {
     setConn(false, "failed");
     $("conn-err").textContent =
       e.message.startsWith("401")
-        ? "401 — check the key pair."
+        ? (state.auth ? "401 — check the key pair." : "This API needs a key pair.")
         : `${e.message}. If the API is on another origin, start it with CORS_ORIGINS set.`;
     $("conn-err").classList.remove("hidden");
   }
@@ -391,6 +395,8 @@ async function loadTraces() {
 async function openTrace(id) {
   $("trace-rows").querySelectorAll("tr").forEach(tr =>
     tr.setAttribute("aria-selected", String(tr.dataset.id === id)));
+  // Shareable: the URL now opens straight into this trace.
+  history.replaceState(null, "", "#trace=" + encodeURIComponent(id));
   const t = await api("/traces/" + encodeURIComponent(id));
   state.trace = t; state.span = null;
 
@@ -616,7 +622,7 @@ $("btn-theme").onclick = () => {
   store.set("ow-theme", next);
 };
 
-(function init() {
+(async function init() {
   const theme = store.get("ow-theme");
   if (theme) document.documentElement.setAttribute("data-theme", theme);
   const saved = store.get("ow");
@@ -627,6 +633,18 @@ $("btn-theme").onclick = () => {
       connect();
       return;
     } catch { /* fall through to the form */ }
+  }
+  // Served by the API itself (as on the hosted demo): talk to this origin, and
+  // open straight into the read-only demo when the API offers one.
+  if (location.protocol.startsWith("http")) {
+    try {
+      const res = await fetch(location.origin + "/health");
+      const health = res.ok ? await res.json() : null;
+      if (health && health.version) {
+        $("api").value = location.origin;
+        if (health.public_demo) { connect(); return; }
+      }
+    } catch { /* not served by the API */ }
   }
   setConn(false, "not connected");
 })();

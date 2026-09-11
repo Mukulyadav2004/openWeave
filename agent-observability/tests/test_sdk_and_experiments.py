@@ -399,3 +399,42 @@ def test_compare_includes_scores_anchored_to_the_run_item(api):
     v1 = next(r for r in report["runs"] if r["run"] == "v1")
     assert v1["scores"]["relevance"]["mean"] == pytest.approx(0.6)
     assert report["items"][0]["runs"]["v1"]["scores"]["relevance"] == pytest.approx(0.6)
+
+
+def test_public_demo_reads_only_the_demo_project(api, monkeypatch):
+    """Anonymous reads are scoped to PUBLIC_DEMO_PROJECT; writes still need a key,
+    and credentials that are sent are verified, never swapped for the demo."""
+    from sqlalchemy import create_engine
+    import main
+
+    monkeypatch.setattr(main, "PUBLIC_DEMO_PROJECT", "test")
+    engine = create_engine(SYNC_URL)
+    with engine.begin() as conn:
+        conn.execute(M.Project.__table__.insert().values(id="other", name="other"))
+        for project, trace_id in ((PROJECT, "demo-trace"), ("other", "private-trace")):
+            conn.execute(text("""
+                INSERT INTO traces (project_id, id, timestamp, is_experiment,
+                                    created_at, updated_at)
+                VALUES (:p, :t, now(), false, now(), now())
+            """), {"p": project, "t": trace_id})
+    engine.dispose()
+
+    anonymous = {"authorization": ""}
+    assert api.get("/health").json()["public_demo"] is True
+    listed = api.get("/traces", headers=anonymous).json()["data"]
+    assert [t["id"] for t in listed] == ["demo-trace"]
+    assert api.get("/traces/private-trace", headers=anonymous).status_code == 404
+    assert api.post("/datasets", json={"name": "qa"}, headers=anonymous).status_code == 401
+    wrong = "Basic " + base64.b64encode(b"pk-ow-nope:sk-ow-nope").decode()
+    assert api.get("/traces", headers={"authorization": wrong}).status_code == 401
+
+
+def test_public_demo_is_off_unless_configured(api):
+    assert api.get("/health").json()["public_demo"] is False
+    assert api.get("/traces", headers={"authorization": ""}).status_code == 401
+
+
+def test_ui_is_served_from_the_api_origin(api):
+    resp = api.get("/")
+    assert resp.status_code == 200
+    assert "<title>OpenWeave</title>" in resp.text
