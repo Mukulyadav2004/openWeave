@@ -1,41 +1,29 @@
 #!/usr/bin/env bash
-# Convenience wrapper: validates dependencies, sets default env vars if absent,
-# then runs the benchmark suite.
+# Runs benchmark/load_test.py against a local stack. Arguments pass through:
 #
-# Usage (from repo root):
-#   bash benchmark/run.sh
+#   bash benchmark/run.sh --quick
+#   bash benchmark/run.sh --json bench.json
 #
-# Override any default:
-#   GRPC_HOST=10.0.0.1 API_BASE_URL=http://10.0.0.1:8000 bash benchmark/run.sh
+# Use keys for a project with no evaluation rules (python scripts/bootstrap.py
+# bench), so the eval worker does not send benchmark traffic to the judge mid-run.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# ── dependency check ───────────────────────────────────────────────────────────
-echo "Checking Python dependencies…"
 python3 -c "import grpc, asyncpg, redis, httpx" 2>/dev/null || {
-  echo ""
-  echo "Missing dependencies. Install with:"
-  echo "  pip install grpcio asyncpg redis httpx"
+  echo "Missing dependencies: pip install -r requirements.txt"
   exit 1
 }
-echo "All dependencies found."
+if [[ -z "${OPENWEAVE_PUBLIC_KEY:-}" || -z "${OPENWEAVE_SECRET_KEY:-}" ]]; then
+  echo "Set OPENWEAVE_PUBLIC_KEY and OPENWEAVE_SECRET_KEY (python scripts/bootstrap.py bench prints them)."
+  exit 1
+fi
 
-# ── defaults (can be overridden by the caller's environment) ──────────────────
-export GRPC_HOST="${GRPC_HOST:-localhost}"
-export GRPC_PORT="${GRPC_PORT:-50051}"
+export OPENWEAVE_HOST="${OPENWEAVE_HOST:-localhost}"
+export OPENWEAVE_PORT="${OPENWEAVE_PORT:-50051}"
 export REDIS_HOST="${REDIS_HOST:-localhost}"
 export REDIS_PORT="${REDIS_PORT:-6379}"
 export DATABASE_URL="${DATABASE_URL:-postgresql://agentobs:agentobs@localhost:5432/agentobs}"
-export API_BASE_URL="${API_BASE_URL:-http://localhost:8000}"
+export API_BASE="${API_BASE:-http://localhost:8000}"
 
-echo ""
-echo "Connection targets:"
-echo "  gRPC        → ${GRPC_HOST}:${GRPC_PORT}"
-echo "  Redis       → ${REDIS_HOST}:${REDIS_PORT}"
-echo "  PostgreSQL  → ${DATABASE_URL}"
-echo "  REST API    → ${API_BASE_URL}"
-echo ""
-
-python3 "${SCRIPT_DIR}/load_test.py"
+exec python3 "${SCRIPT_DIR}/load_test.py" "$@"

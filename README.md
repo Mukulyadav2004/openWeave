@@ -212,13 +212,55 @@ code as it was and passes on the code as it is.
 
 ## Benchmarks
 
-`benchmark/load_test.py` still speaks the v1 protocol and has to be ported to
-the v2 SDK before it can measure ingestion throughput and end-to-end latency.
+_Apple M5 (10 cores, 16 GB), macOS 25.6 (arm64), Python 3.12.13, 2026-09-11.
+Postgres 15 and Redis 7 in Docker, every service on localhost — this measures the
+code, not production capacity. One of three consecutive runs, chosen because it
+sits at the median on nearly every metric. Reproduce with
+`bash agent-observability/benchmark/run.sh`._
 
-<!-- TODO: port it, run it, and paste the numbers, with the hardware and configuration
-     they came from. Then re-run after any change that should move them and show
-     both. "I measured it, changed the design, measured again" is worth more
-     than any single number — and an unlabelled number is worth nothing. -->
+**SDK overhead per span** — what instrumentation costs the caller
+
+| | p50 | p95 |
+|---|---|---|
+| Plain call | 0.167 µs | 0.209 µs |
+| Instrumented | 15.208 µs | 18.0 µs |
+| **Added by the SDK** | **15.041 µs** | 17.792 µs |
+
+4601 events delivered, 0 dropped.
+
+**Ingest throughput by batch size** — batch size 1 is v1's shape
+
+| Batch size | RPCs | Events/sec |
+|---|---|---|
+| 1 | 5001 | 1,239 |
+| 25 | 201 | 19,288 |
+| 200 | 26 | 42,031 |
+
+**End-to-end latency** (SDK call → readable in Postgres, on a drained stream, n=50): p50 12.921 ms · p95 15.886 ms · p99 16.607 ms
+
+**Burst drain** — accept rate vs commit rate
+
+| Burst | Accepted/sec | Committed in | Committed/sec |
+|---|---|---|---|
+| 5,001 GENERATION events | 43,441 | 1.283 s | 3,897 |
+| 5,001 SPAN events | 43,436 | 0.329 s | 15,206 |
+
+**API read latency**
+
+| Endpoint | p50 | p95 |
+|---|---|---|
+| `GET /traces` (50 rows) | 3.853 ms | 4.285 ms |
+| `GET /traces/{id}` (5,000-span tree) | 104.465 ms | 112.983 ms |
+
+**API key cache**: p50 3.681 ms cold vs 1.941 ms warm — 1.74 ms saved per authenticated request.
+
+**Reading these numbers**
+
+- Batching is worth **34x** here (1,239 → 42,031 events/sec). v1 sent one blocking RPC per trace, so the batch-size-1 row is roughly its ceiling.
+- The SDK adds **~15 µs** to a decorated call — building the span's create and update events (ids, timestamps, protobuf) and an in-memory enqueue; nothing waits on the network. v1 held the caller for a full gRPC round trip instead. Argument capture is a small share for small arguments but grows with their size, so pass `capture_input=False` on functions that take large inputs.
+- End-to-end p50 **13 ms**, p95 16 ms, measured once the previous stage's backlog has drained. Without that wait the first samples queue behind it, and at n=50 a single slow sample becomes the p99. A blocked XREADGROUP returns as soon as an event arrives, so an idle worker adds no poll delay.
+- Ingest accepts **43,441/sec**, but the worker commits generations at **3,897/sec** and plain spans at 15,206/sec. The gap is cost resolution, which issues one UPDATE per priced generation, so that is the first thing to batch if commit rate matters. Accepting faster than you commit only moves the queue: the commit rate is what the stream's MAXLEN and the worker replica count have to be sized against.
+- Throughput and drain vary between runs, and the first run against a fresh database is noticeably slower. Discard it and report the median of the next few.
 
 ## Screenshots
 
