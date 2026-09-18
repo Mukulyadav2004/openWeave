@@ -620,28 +620,85 @@ async def compare_runs(name: str, request: Request,
 # --------------------------------------------------------------------------- #
 @app.get("/metrics/daily")
 async def daily_metrics(request: Request, ctx: AuthContext = Depends(auth),
-                        days: int = Query(14, ge=1, le=90)):
-    rows = await request.app.state.pool.fetch("""
-        SELECT date_trunc('day', t.timestamp) AS day,
-               count(DISTINCT t.id) AS traces,
-               sum(o.total_cost) AS cost,
-               avg(o.latency_ms) AS avg_latency_ms,
-               avg(sc.value) AS avg_score
-          FROM traces t
-          LEFT JOIN observations o
-                 ON o.project_id = t.project_id AND o.trace_id = t.id
-          LEFT JOIN scores sc
-                 ON sc.project_id = t.project_id AND sc.trace_id = t.id
-         WHERE t.project_id = $1
-           AND t.timestamp >= now() - ($2 || ' days')::interval
-           AND NOT t.is_experiment
+                        days: int = Query(14, ge=1, le=90),
+                        is_experiment: bool | None = None):
+    """Dashboard metrics without observation/score join fan-out.
+
+    Cost and latency are first rolled up once per trace. Scores are aggregated
+    independently, otherwise a trace with N observations and M scores appears
+    N*M times and makes both numbers wrong. ``is_experiment`` is optional so
+    the dashboard can show all traffic or one side of the split.
+    """
+    traffic_filter = "" if is_experiment is None else "AND t.is_experiment = $3"
+    params: list[Any] = [ctx.project_id, str(days)]
+    if is_experiment is not None:
+        params.append(is_experiment)
+
+    ctes = f"""
+        WITH filtered_traces AS (
+            SELECT t.project_id, t.id, t.timestamp
+              FROM traces t
+             WHERE t.project_id = $1
+               AND t.timestamp >= now() - ($2 || ' days')::interval
+               {traffic_filter}
+        ),
+        trace_rollups AS (
+            SELECT ft.id, ft.timestamp,
+                   sum(o.total_cost) AS total_cost,
+                   EXTRACT(EPOCH FROM (max(o.end_time) - min(o.start_time))) * 1000
+                     AS latency_ms
+              FROM filtered_traces ft
+              LEFT JOIN observations o
+                     ON o.project_id = ft.project_id AND o.trace_id = ft.id
+             GROUP BY ft.id, ft.timestamp
+        ),
+        score_rollups AS (
+            SELECT ft.id, avg(s.value) AS avg_score
+              FROM filtered_traces ft
+              LEFT JOIN scores s
+                     ON s.project_id = ft.project_id AND s.trace_id = ft.id
+                    AND s.value IS NOT NULL
+             GROUP BY ft.id
+        )
+    """
+    pool = request.app.state.pool
+    rows = await pool.fetch(ctes + """
+        SELECT date_trunc('day', tr.timestamp) AS day,
+               count(*) AS traces,
+               sum(tr.total_cost) AS cost,
+               avg(tr.latency_ms) AS avg_latency_ms,
+               avg(sr.avg_score) AS avg_score
+          FROM trace_rollups tr
+          LEFT JOIN score_rollups sr ON sr.id = tr.id
          GROUP BY 1 ORDER BY 1
-    """, ctx.project_id, str(days))
-    return {"data": [
-        {"day": r["day"], "traces": r["traces"],
-         "cost": float(r["cost"]) if r["cost"] is not None else None,
-         "avg_latency_ms": float(r["avg_latency_ms"])
-                           if r["avg_latency_ms"] is not None else None,
-         "avg_score": float(r["avg_score"]) if r["avg_score"] is not None else None}
-        for r in rows
-    ]}
+    """, *params)
+    summary = await pool.fetchrow(ctes + """
+        SELECT count(*) AS traces,
+               sum(tr.total_cost) AS cost,
+               avg(tr.latency_ms) AS avg_latency_ms,
+               avg(sr.avg_score) AS avg_score
+          FROM trace_rollups tr
+          LEFT JOIN score_rollups sr ON sr.id = tr.id
+    """, *params)
+
+    def optional_float(value):
+        return float(value) if value is not None else None
+
+    return {
+        "days": days,
+        "traffic": ("experiments" if is_experiment is True else
+                    "production" if is_experiment is False else "all"),
+        "summary": {
+            "traces": summary["traces"],
+            "cost": optional_float(summary["cost"]),
+            "avg_latency_ms": optional_float(summary["avg_latency_ms"]),
+            "avg_score": optional_float(summary["avg_score"]),
+        },
+        "data": [
+            {"day": r["day"], "traces": r["traces"],
+             "cost": optional_float(r["cost"]),
+             "avg_latency_ms": optional_float(r["avg_latency_ms"]),
+             "avg_score": optional_float(r["avg_score"])}
+            for r in rows
+        ],
+    }

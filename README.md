@@ -54,7 +54,7 @@ expensive".
  └────────┬─────────┘  ──►  scores + job_executions (successes AND failures)
           │
           ▼
- ┌──────────────────┐  ◄──  single-file UI: waterfall, costs, run comparison
+ ┌──────────────────┐  ◄──  single-file UI: dashboard, waterfall, run comparison
  │   FastAPI API    │
  └──────────────────┘
 ```
@@ -71,7 +71,7 @@ Everything lives under `agent-observability/`:
 | `api-server/` | Read API, datasets, run comparison |
 | `ui/` | Single-file trace explorer (no build step) |
 | `shared/` | Auth and pricing, used by more than one service |
-| `tests/` | 44 tests, most of them regressions for bugs found in real runs |
+| `tests/` | 45 tests, most of them regressions for bugs found in real runs |
 
 ## Quickstart
 
@@ -149,6 +149,11 @@ exp.run("support-qa", "prompt-v2", agent_v2, metadata={"prompt_version": 2})
 print(exp.format_comparison(exp.compare("support-qa", ["prompt-v1", "prompt-v2"])))
 ```
 
+`scripts/demo_experiment.py` is a deterministic wiring demo: `prompt-v1`
+answers from the wrong retrieved article, while the more expensive `prompt-v2`
+uses the matching context. A working judge should therefore report a visible
+quality increase alongside the cost increase.
+
 <!-- TODO: paste YOUR OWN comparison output here, from a real judge and a real
      agent. Do not ship numbers from the simulated demo agent — they are not a
      result and an interviewer who asks how they were produced will find that
@@ -197,7 +202,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://agentobs:agentobs@localhost:5432/agentobs
 
 > The suite calls `drop_all`. Point it at a **dedicated** test database.
 
-44 tests. Most are regressions for bugs found running the thing end to end —
+45 tests. Most are regressions for bugs found running the thing end to end —
 span closes rejected by a CHECK constraint, stub traces overwriting real ones,
 an upsert clobbering fields the event never sent, a cached API key skipping its
 expiry check, a debounce that a burst of announcements walked straight through,

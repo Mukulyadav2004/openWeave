@@ -167,6 +167,32 @@ pre.io {
 .empty { padding:28px; text-align:center; color:var(--text-3); }
 .hidden { display:none !important; }
 .note { font-size:12px; color:var(--text-2); margin-top:8px; }
+
+/* --- overview ----------------------------------------------------------- */
+.metrics-grid {
+  display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px;
+  margin-bottom:16px;
+}
+.metric-card {
+  background:var(--surface-1); border:1px solid var(--border);
+  border-radius:10px; padding:16px;
+}
+.metric-label { color:var(--text-2); font-size:11px; text-transform:uppercase;
+                letter-spacing:.05em; }
+.metric-value { font-size:25px; line-height:1.2; font-weight:650; margin-top:7px;
+                font-variant-numeric:tabular-nums; }
+.trend { margin-top:14px; }
+.trend-row {
+  display:grid; grid-template-columns:72px minmax(120px,1fr) 54px 80px;
+  align-items:center; gap:10px; min-height:29px; font-variant-numeric:tabular-nums;
+}
+.trend-track { height:12px; background:var(--surface-2); border-radius:4px;
+               overflow:hidden; }
+.trend-bar { height:100%; min-width:2px; background:var(--accent); border-radius:4px; }
+.trend-day,.trend-score { color:var(--text-2); font-size:11px; }
+@media (max-width:800px) {
+  .metrics-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
 </style>
 </head>
 <body>
@@ -174,7 +200,8 @@ pre.io {
 <header>
   <div class="brand">open<span>weave</span></div>
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" id="tab-traces" aria-selected="true">Traces</button>
+    <button class="tab" role="tab" id="tab-overview" aria-selected="true">Overview</button>
+    <button class="tab" role="tab" id="tab-traces" aria-selected="false">Traces</button>
     <button class="tab" role="tab" id="tab-compare" aria-selected="false">Experiments</button>
   </div>
   <div class="spacer"></div>
@@ -203,6 +230,56 @@ pre.io {
     </p>
     <p class="note err-text hidden" id="conn-err"></p>
   </div>
+
+  <!-- ================= OVERVIEW ================= -->
+  <section id="view-overview" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div><label for="m-days">Window</label>
+          <select id="m-days">
+            <option value="7">Last 7 days</option>
+            <option value="14" selected>Last 14 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select></div>
+        <div><label for="m-kind">Traffic</label>
+          <select id="m-kind">
+            <option value="">All</option>
+            <option value="false">Production only</option>
+            <option value="true">Experiments only</option>
+          </select></div>
+        <button class="btn" id="btn-metrics">Refresh</button>
+      </div>
+    </div>
+
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="metric-label">Traces</div>
+        <div class="metric-value" id="m-traces">—</div></div>
+      <div class="metric-card"><div class="metric-label">Total cost</div>
+        <div class="metric-value" id="m-cost">—</div></div>
+      <div class="metric-card"><div class="metric-label">Average latency</div>
+        <div class="metric-value" id="m-latency">—</div></div>
+      <div class="metric-card"><div class="metric-label">Average score</div>
+        <div class="metric-value" id="m-score">—</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Trace volume</h2>
+      <p class="note">Daily traces with the mean evaluation score alongside.</p>
+      <div class="trend" id="m-trend"></div>
+      <div class="empty hidden" id="metrics-empty">No traces in this window.</div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-bottom:10px">Daily details</h2>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Day</th><th class="num">Traces</th>
+          <th class="num">Average latency</th><th class="num">Cost</th>
+          <th class="num">Average score</th></tr></thead>
+        <tbody id="m-rows"></tbody>
+      </table></div>
+    </div>
+  </section>
 
   <!-- ================= TRACES ================= -->
   <section id="view-traces" class="hidden">
@@ -313,6 +390,7 @@ const ms = v => v == null ? "—" :
   v >= 1000 ? (v/1000).toFixed(2)+" s" : Math.round(v)+" ms";
 const money = v => v == null ? "—" :
   v === 0 ? "$0" : v < 0.01 ? "$"+v.toFixed(6) : "$"+v.toFixed(4);
+const score = v => v == null ? "—" : Number(v).toFixed(3);
 const when = t => { if(!t) return "—";
   const d = new Date(t), now = Date.now(), diff = (now-d)/1000;
   if (diff < 60) return Math.round(diff)+"s ago";
@@ -352,10 +430,10 @@ async function connect() {
     setConn(true, state.auth ? "connected" : "public demo · read-only");
     if (state.auth) store.set("ow", JSON.stringify({ base: state.base, pk, sk }));
     $("settings").classList.add("hidden");
-    $("view-traces").classList.remove("hidden");
-    await Promise.all([loadTraces(), loadDatasets()]);
+    showTab("overview");
+    await Promise.all([loadOverview(), loadTraces(), loadDatasets()]);
     const linked = new URLSearchParams(location.hash.slice(1)).get("trace");
-    if (linked) openTrace(linked);
+    if (linked) { showTab("traces"); openTrace(linked); }
   } catch (e) {
     setConn(false, "failed");
     $("conn-err").textContent =
@@ -364,6 +442,43 @@ async function connect() {
         : `${e.message}. If the API is on another origin, start it with CORS_ORIGINS set.`;
     $("conn-err").classList.remove("hidden");
   }
+}
+
+/* --- overview ------------------------------------------------------------ */
+async function loadOverview() {
+  const data = await api("/metrics/daily", {
+    days: $("m-days").value,
+    is_experiment: $("m-kind").value,
+  });
+  const s = data.summary;
+  $("m-traces").textContent = Number(s.traces || 0).toLocaleString();
+  $("m-cost").textContent = money(s.cost);
+  $("m-latency").textContent = ms(s.avg_latency_ms);
+  $("m-score").textContent = score(s.avg_score);
+
+  const rows = data.data || [];
+  $("metrics-empty").classList.toggle("hidden", rows.length > 0);
+  const maxTraces = Math.max(1, ...rows.map(r => Number(r.traces)));
+  $("m-trend").innerHTML = rows.map(r => {
+    const day = new Date(r.day).toLocaleDateString(undefined,
+      { month:"short", day:"numeric" });
+    const width = Math.max(2, Number(r.traces) / maxTraces * 100);
+    return `<div class="trend-row">
+      <span class="trend-day">${esc(day)}</span>
+      <div class="trend-track" title="${r.traces} traces">
+        <div class="trend-bar" style="width:${width}%"></div></div>
+      <span class="num">${r.traces}</span>
+      <span class="trend-score num">score ${score(r.avg_score)}</span>
+    </div>`;
+  }).join("");
+
+  $("m-rows").innerHTML = rows.slice().reverse().map(r => `<tr style="cursor:default">
+    <td>${esc(new Date(r.day).toLocaleDateString())}</td>
+    <td class="num">${r.traces}</td>
+    <td class="num">${ms(r.avg_latency_ms)}</td>
+    <td class="num">${money(r.cost)}</td>
+    <td class="num">${score(r.avg_score)}</td>
+  </tr>`).join("");
 }
 
 /* --- traces list --------------------------------------------------------- */
@@ -601,15 +716,19 @@ async function runCompare() {
 
 /* --- chrome -------------------------------------------------------------- */
 function showTab(which) {
+  $("tab-overview").setAttribute("aria-selected", String(which === "overview"));
   $("tab-traces").setAttribute("aria-selected", String(which === "traces"));
   $("tab-compare").setAttribute("aria-selected", String(which === "compare"));
+  $("view-overview").classList.toggle("hidden", which !== "overview");
   $("view-traces").classList.toggle("hidden", which !== "traces");
   $("view-compare").classList.toggle("hidden", which !== "compare");
 }
 
+$("tab-overview").onclick = () => { showTab("overview"); loadOverview(); };
 $("tab-traces").onclick = () => showTab("traces");
 $("tab-compare").onclick = () => { showTab("compare"); loadDatasets(); };
 $("btn-connect").onclick = connect;
+$("btn-metrics").onclick = loadOverview;
 $("btn-refresh").onclick = loadTraces;
 $("btn-compare").onclick = runCompare;
 $("c-dataset").onchange = loadRuns;

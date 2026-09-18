@@ -306,6 +306,57 @@ def test_compare_needs_two_runs(api):
                    params={"runs": "only-one"}).status_code == 400
 
 
+def test_daily_metrics_are_correct_and_filter_traffic(api):
+    """Multiple observations and scores must not multiply each other in SQL."""
+    from sqlalchemy import create_engine
+
+    engine = create_engine(SYNC_URL)
+    with engine.begin() as conn:
+        for trace_id, is_experiment in (("prod", False), ("experiment", True)):
+            conn.execute(text("""
+                INSERT INTO traces (project_id, id, timestamp, is_experiment,
+                                    created_at, updated_at)
+                VALUES (:p, :t, now(), :exp, now(), now())
+            """), {"p": PROJECT, "t": trace_id, "exp": is_experiment})
+        for trace_id, cost, offset in (("prod", 0.001, 0), ("prod", 0.002, 1),
+                                       ("experiment", 0.004, 0)):
+            conn.execute(text("""
+                INSERT INTO observations (project_id, id, trace_id, type,
+                    start_time, end_time, level, total_cost, created_at, updated_at)
+                VALUES (:p, :o, :t, 'GENERATION',
+                        now() + make_interval(secs => :off),
+                        now() + make_interval(secs => :off + 1),
+                        'DEFAULT', :cost, now(), now())
+            """), {"p": PROJECT, "o": str(uuid.uuid4()), "t": trace_id,
+                    "off": offset, "cost": cost})
+        for trace_id, score in (("prod", 0.4), ("prod", 0.6),
+                                ("experiment", 0.9)):
+            conn.execute(text("""
+                INSERT INTO scores (project_id, id, trace_id, name, data_type,
+                    value, source, timestamp, created_at)
+                VALUES (:p, :i, :t, 'relevance', 'NUMERIC', :score,
+                        'EVAL', now(), now())
+            """), {"p": PROJECT, "i": str(uuid.uuid4()), "t": trace_id,
+                    "score": score})
+    engine.dispose()
+
+    overview = api.get("/metrics/daily", params={"days": 7}).json()
+    assert overview["traffic"] == "all"
+    assert overview["summary"]["traces"] == 2
+    assert overview["summary"]["cost"] == pytest.approx(0.007)
+    # Scores are averaged once per trace: mean(0.5, 0.9), not multiplied by spans.
+    assert overview["summary"]["avg_score"] == pytest.approx(0.7)
+    assert overview["summary"]["avg_latency_ms"] == pytest.approx(1500, abs=10)
+    assert sum(day["traces"] for day in overview["data"]) == 2
+
+    production = api.get("/metrics/daily",
+                         params={"days": 7, "is_experiment": "false"}).json()
+    assert production["traffic"] == "production"
+    assert production["summary"]["traces"] == 1
+    assert production["summary"]["cost"] == pytest.approx(0.003)
+    assert production["summary"]["avg_score"] == pytest.approx(0.5)
+
+
 def test_run_item_link_is_idempotent(api):
     api.post("/datasets", json={"name": "qa"})
     item = api.post("/datasets/qa/items", json={"input": "q"}).json()["id"]
@@ -438,3 +489,5 @@ def test_ui_is_served_from_the_api_origin(api):
     resp = api.get("/")
     assert resp.status_code == 200
     assert "<title>OpenWeave</title>" in resp.text
+    assert 'id="tab-overview"' in resp.text
+    assert 'id="m-traces"' in resp.text

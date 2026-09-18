@@ -42,10 +42,16 @@ CASES = [
      "Billing > Plan > Cancel. Access continues to the end of the period."),
 ]
 
-# Two "prompt versions". v1 is terse and skips the specifics; v2 answers
-# properly but spends more tokens doing it — the classic quality/cost trade
-# this whole project exists to measure.
+# Two "prompt versions". The baseline represents the common failure mode where
+# a prompt ignores retrieved context and answers from the wrong support article.
+# The grounded version uses the retrieved answer, but spends more input tokens
+# doing so. This gives the demo a real quality/cost trade instead of two answers
+# that a relevance judge quite reasonably scores the same.
 KB = {q: a for q, a in CASES}
+BASELINE_ANSWERS = {
+    question: CASES[(i + 1) % len(CASES)][1]
+    for i, (question, _) in enumerate(CASES)
+}
 
 ow = OpenWeave()
 
@@ -57,14 +63,16 @@ def retrieve(question: str) -> list[str]:
 
 
 @ow.observe(type="GENERATION", name="answer")
-def generate(question: str, docs: list[str], *, verbose: bool,
+def generate(question: str, docs: list[str], *, grounded: bool,
              prompt_version: int) -> str:
     time.sleep(0.02)
     span = ow.current()
     span.first_token()
-    answer = docs[0] if verbose else docs[0].split(".")[0][:24]
+    answer = docs[0] if grounded else BASELINE_ANSWERS.get(
+        question, "This answer concerns a different support topic."
+    )
     # Realistic-looking usage so the cost engine has something to price.
-    in_tokens = 180 + len(question) * 2 + (240 if verbose else 0)
+    in_tokens = 180 + len(question) * 2 + (240 if grounded else 0)
     out_tokens = max(8, len(answer) // 3)
     span.update(
         model="gpt-4o-mini",
@@ -74,11 +82,11 @@ def generate(question: str, docs: list[str], *, verbose: bool,
     return answer
 
 
-def make_agent(verbose: bool, prompt_version: int):
+def make_agent(grounded: bool, prompt_version: int):
     @ow.observe(type="AGENT", name="support-agent")
     def agent(question: str) -> str:
         return generate(question, retrieve(question),
-                        verbose=verbose, prompt_version=prompt_version)
+                        grounded=grounded, prompt_version=prompt_version)
     return agent
 
 
@@ -88,7 +96,10 @@ def main() -> None:
                  "(scripts/bootstrap.py prints them)")
 
     exp = Experiment(ow, api_base=API_BASE)
-    exp.create_dataset(DATASET, "Support questions with known-good answers")
+    exp.create_dataset(
+        DATASET,
+        "Support questions comparing an ungrounded baseline with grounded answers",
+    )
     existing = {str(i["input"]) for i in exp.items(DATASET)}
     for question, answer in CASES:
         if f'"{question}"' not in existing and question not in existing:
@@ -96,10 +107,13 @@ def main() -> None:
     n = len(exp.items(DATASET))
     print(f"dataset {DATASET!r}: {n} items\n")
 
-    for run_name, verbose, version in (("prompt-v1", False, 1),
-                                       ("prompt-v2", True, 2)):
-        result = exp.run(DATASET, run_name, make_agent(verbose, version),
-                         metadata={"prompt_version": version})
+    for run_name, grounded, version in (("prompt-v1", False, 1),
+                                        ("prompt-v2", True, 2)):
+        result = exp.run(
+            DATASET, run_name, make_agent(grounded, version),
+            metadata={"prompt_version": version,
+                      "strategy": "grounded" if grounded else "ungrounded"},
+        )
         print(f"  ran {run_name}: {result['ok']} ok, {result['failed']} failed")
 
     print("\nwaiting for the judge…")
