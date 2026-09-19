@@ -193,19 +193,130 @@ pre.io {
 @media (max-width:800px) {
   .metrics-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* --- presentation polish ------------------------------------------------ */
+:root {
+  --surface-0:#f5f7fb; --surface-1:#ffffff; --surface-2:#f0f3f8;
+  --border:#e3e8f0; --border-strong:#cbd3df;
+  --text-1:#111827; --text-2:#526077; --text-3:#8490a3;
+  --accent:#4f46e5; --accent-2:#7c3aed; --accent-soft:#eef2ff;
+  --good:#16a34a; --good-soft:#ecfdf3; --critical:#dc2626;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0:#0b1020; --surface-1:#12192a; --surface-2:#1a2336;
+    --border:#273249; --border-strong:#3a4761;
+    --text-1:#f8fafc; --text-2:#b5c0d2; --text-3:#7f8ca2;
+    --accent:#818cf8; --accent-2:#a78bfa; --accent-soft:#202647;
+    --good-soft:#102b20; --shadow:0 14px 32px rgba(0,0,0,.22);
+  }
+}
+:root[data-theme="dark"] {
+  --surface-0:#0b1020; --surface-1:#12192a; --surface-2:#1a2336;
+  --border:#273249; --border-strong:#3a4761;
+  --text-1:#f8fafc; --text-2:#b5c0d2; --text-3:#7f8ca2;
+  --accent:#818cf8; --accent-2:#a78bfa; --accent-soft:#202647;
+  --good-soft:#102b20; --shadow:0 14px 32px rgba(0,0,0,.22);
+}
+body {
+  min-height:100vh; font-size:14px;
+  background:
+    radial-gradient(circle at 12% -10%, color-mix(in srgb,var(--accent) 10%,transparent), transparent 28rem),
+    var(--surface-0);
+}
+header {
+  min-height:64px; padding:10px 28px; gap:22px;
+  box-shadow:0 1px 0 rgba(16,24,40,.03);
+  backdrop-filter:blur(14px); background:color-mix(in srgb,var(--surface-1) 92%,transparent);
+}
+.brand { display:flex; align-items:center; gap:9px; font-size:17px; font-weight:750; }
+.brand-mark {
+  display:grid; place-items:center; width:30px; height:30px; border-radius:9px;
+  color:#fff; font-size:15px; font-weight:800;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  box-shadow:0 7px 18px color-mix(in srgb,var(--accent) 28%,transparent);
+}
+.tabs { padding:4px; border:1px solid var(--border); background:var(--surface-2); border-radius:10px; }
+.tab { padding:7px 14px; border-radius:7px; transition:.18s ease; }
+.tab:hover { color:var(--text-1); }
+.tab[aria-selected="true"] { background:var(--surface-1); box-shadow:0 1px 4px rgba(16,24,40,.08); border-color:transparent; }
+.wrap { padding:28px; max-width:1540px; }
+.card,.metric-card { border-radius:14px; box-shadow:var(--shadow); }
+.card { padding:20px; margin-bottom:18px; }
+.toolbar { padding:14px 16px; box-shadow:none; }
+.section-head { display:flex; align-items:flex-end; justify-content:space-between; gap:18px; margin:2px 0 20px; }
+.section-head h1 { font-size:25px; letter-spacing:-.035em; }
+.section-head p { margin:4px 0 0; color:var(--text-2); max-width:680px; }
+.eyebrow { color:var(--accent); font-size:11px; font-weight:750; letter-spacing:.1em; text-transform:uppercase; margin-bottom:3px; }
+input,select { min-height:38px; background:var(--surface-1); padding:8px 10px; transition:.16s ease; }
+input:hover,select:hover { border-color:var(--border-strong); }
+.btn { min-height:38px; padding:8px 15px; border-radius:8px; transition:transform .14s ease,box-shadow .14s ease,opacity .14s; }
+.btn:not(:disabled):hover { transform:translateY(-1px); box-shadow:0 7px 16px color-mix(in srgb,var(--accent) 22%,transparent); }
+.btn.ghost:not(:disabled):hover { box-shadow:0 5px 12px rgba(16,24,40,.08); }
+.metrics-grid { gap:16px; }
+.metric-card { position:relative; overflow:hidden; padding:20px; min-height:126px; }
+.metric-card::after { content:""; position:absolute; width:90px; height:90px; right:-34px; top:-42px; border-radius:50%; background:var(--metric-tint,var(--accent-soft)); opacity:.55; }
+.metric-top { display:flex; align-items:center; justify-content:space-between; }
+.metric-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:9px; color:var(--metric-color,var(--accent)); background:var(--metric-tint,var(--accent-soft)); font-weight:750; position:relative; z-index:1; }
+.metric-value { font-size:29px; letter-spacing:-.035em; margin-top:12px; }
+.metric-hint { color:var(--text-3); font-size:11px; margin-top:4px; }
+.chart-wrap { overflow-x:auto; padding:14px 2px 0; }
+.volume-chart { display:flex; align-items:flex-end; gap:9px; height:220px; min-width:620px; border-bottom:1px solid var(--border); padding:12px 8px 0; background:repeating-linear-gradient(to top,transparent 0,transparent 49px,var(--border) 50px); }
+.chart-col { flex:1; height:100%; min-width:28px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:7px; position:relative; }
+.chart-bar { width:min(34px,75%); min-height:4px; border-radius:7px 7px 2px 2px; background:linear-gradient(180deg,var(--accent-2),var(--accent)); box-shadow:0 5px 12px color-mix(in srgb,var(--accent) 18%,transparent); transition:height .3s ease,filter .15s; }
+.chart-col:hover .chart-bar { filter:brightness(1.12); }
+.chart-value { position:absolute; color:var(--text-2); font-size:10px; font-weight:650; }
+.chart-label { color:var(--text-3); font-size:10px; white-space:nowrap; height:18px; }
+.trace-story { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0; }
+.story-card { background:var(--surface-0); border:1px solid var(--border); border-radius:11px; overflow:hidden; }
+.story-head { display:flex; align-items:center; gap:7px; padding:9px 12px; border-bottom:1px solid var(--border); color:var(--text-2); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+.story-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+.story-card.answer .story-dot { background:var(--good); }
+.story-body { margin:0; border:0; background:transparent; min-height:82px; max-height:190px; padding:12px; }
+.detail-title { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.detail-title h2 { font-size:23px; letter-spacing:-.025em; }
+.summary-strip { display:flex; gap:22px; flex-wrap:wrap; padding:12px 14px; border:1px solid var(--border); background:var(--surface-0); border-radius:10px; }
+.summary-item span { display:block; color:var(--text-3); font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
+.summary-item strong { display:block; margin-top:2px; font-size:13px; }
+.subsection-title { display:flex; align-items:center; justify-content:space-between; margin:22px 0 9px; }
+.subsection-title h3 { font-size:15px; }
+.span-panel { padding:16px; background:var(--surface-0); border:1px solid var(--border); border-radius:11px; }
+.io-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+.io-block label { margin-bottom:5px; }
+.status-banner { display:flex; align-items:center; gap:9px; padding:11px 13px; border:1px solid var(--border); border-radius:9px; color:var(--text-2); background:var(--surface-1); margin-bottom:12px; }
+.status-banner.error { color:var(--critical); border-color:color-mix(in srgb,var(--critical) 35%,var(--border)); }
+.spinner { width:15px; height:15px; border:2px solid var(--border-strong); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.empty { padding:44px 24px; }
+.empty-icon { display:grid; place-items:center; width:42px; height:42px; margin:0 auto 10px; border-radius:12px; background:var(--accent-soft); color:var(--accent); font-weight:750; }
+.empty strong { display:block; color:var(--text-1); font-size:14px; margin-bottom:3px; }
+tbody tr { transition:background .14s ease; }
+.pill.live { border-color:color-mix(in srgb,var(--good) 38%,var(--border)); background:var(--good-soft); color:var(--good); }
+.score-row { display:grid; grid-template-columns:minmax(100px,auto) auto auto 1fr; gap:9px; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
+.split > .card { position:sticky; top:82px; max-height:calc(100vh - 104px); overflow:auto; }
+@media (max-width:1100px) { .split > .card { position:static; max-height:none; } }
+@media (max-width:800px) {
+  header,.wrap { padding-left:16px; padding-right:16px; }
+  header { gap:10px; } .tabs { order:3; width:100%; }
+  .tab { flex:1; } .section-head { align-items:flex-start; }
+  .metrics-grid,.trace-story,.io-grid { grid-template-columns:1fr; }
+  .metric-card { min-height:105px; }
+  .wf-row { grid-template-columns:minmax(180px,45%) 1fr; }
+}
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand">open<span>weave</span></div>
+  <div class="brand"><span class="brand-mark">W</span><span>open<span>weave</span></span></div>
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tab-overview" aria-selected="true">Overview</button>
     <button class="tab" role="tab" id="tab-traces" aria-selected="false">Traces</button>
     <button class="tab" role="tab" id="tab-compare" aria-selected="false">Experiments</button>
   </div>
   <div class="spacer"></div>
-  <div class="pill"><span class="dot" id="conn-dot"></span><span id="conn-text">not connected</span></div>
+  <div class="pill" id="conn-pill"><span class="dot" id="conn-dot"></span><span id="conn-text">not connected</span></div>
   <button class="btn ghost" id="btn-settings">Connection</button>
   <button class="btn ghost" id="btn-theme" title="Toggle theme">◐</button>
 </header>
@@ -213,7 +324,9 @@ pre.io {
 <div class="wrap">
 
   <div class="card" id="settings">
-    <h2 style="margin-bottom:12px">Connect</h2>
+    <div class="eyebrow">Workspace access</div>
+    <h2 style="margin-bottom:4px">Connect to OpenWeave</h2>
+    <p class="note" style="margin:0 0 14px">Enter your project keys to explore traces, costs, and evaluations.</p>
     <div class="row">
       <div><label for="api">API base</label>
         <input id="api" value="http://localhost:8000" spellcheck="false"></div>
@@ -233,7 +346,14 @@ pre.io {
 
   <!-- ================= OVERVIEW ================= -->
   <section id="view-overview" class="hidden">
-    <div class="card">
+    <div class="section-head">
+      <div><div class="eyebrow">Project health</div>
+        <h1>Observability at a glance</h1>
+        <p>See how your AI application is performing across traffic, quality, latency, and spend.</p>
+      </div>
+    </div>
+    <div id="metrics-status" class="status-banner hidden"></div>
+    <div class="card toolbar">
       <div class="row">
         <div><label for="m-days">Window</label>
           <select id="m-days">
@@ -253,21 +373,27 @@ pre.io {
     </div>
 
     <div class="metrics-grid">
-      <div class="metric-card"><div class="metric-label">Traces</div>
-        <div class="metric-value" id="m-traces">—</div></div>
-      <div class="metric-card"><div class="metric-label">Total cost</div>
-        <div class="metric-value" id="m-cost">—</div></div>
-      <div class="metric-card"><div class="metric-label">Average latency</div>
-        <div class="metric-value" id="m-latency">—</div></div>
-      <div class="metric-card"><div class="metric-label">Average score</div>
-        <div class="metric-value" id="m-score">—</div></div>
+      <div class="metric-card" style="--metric-color:var(--accent);--metric-tint:var(--accent-soft)">
+        <div class="metric-top"><div class="metric-label">Traces</div><span class="metric-icon">↗</span></div>
+        <div class="metric-value" id="m-traces">—</div><div class="metric-hint">AI requests observed</div></div>
+      <div class="metric-card" style="--metric-color:#f59e0b;--metric-tint:color-mix(in srgb,#f59e0b 14%,transparent)">
+        <div class="metric-top"><div class="metric-label">Total cost</div><span class="metric-icon">$</span></div>
+        <div class="metric-value" id="m-cost">—</div><div class="metric-hint">Model spend in this window</div></div>
+      <div class="metric-card" style="--metric-color:#38bdf8;--metric-tint:color-mix(in srgb,#38bdf8 14%,transparent)">
+        <div class="metric-top"><div class="metric-label">Average latency</div><span class="metric-icon">◷</span></div>
+        <div class="metric-value" id="m-latency">—</div><div class="metric-hint">Mean end-to-end response time</div></div>
+      <div class="metric-card" style="--metric-color:var(--good);--metric-tint:var(--good-soft)">
+        <div class="metric-top"><div class="metric-label">Average score</div><span class="metric-icon">✓</span></div>
+        <div class="metric-value" id="m-score">—</div><div class="metric-hint">LLM judge quality score</div></div>
     </div>
 
     <div class="card">
-      <h2>Trace volume</h2>
-      <p class="note">Daily traces with the mean evaluation score alongside.</p>
-      <div class="trend" id="m-trend"></div>
-      <div class="empty hidden" id="metrics-empty">No traces in this window.</div>
+      <div class="subsection-title"><div><h2>Trace volume</h2>
+        <p class="note" style="margin-top:2px">Daily AI requests for the selected period.</p></div>
+        <span class="pill">Daily</span></div>
+      <div class="chart-wrap"><div class="volume-chart" id="m-trend"></div></div>
+      <div class="empty hidden" id="metrics-empty"><span class="empty-icon">↗</span>
+        <strong>No activity yet</strong>Run your instrumented application to see traffic here.</div>
     </div>
 
     <div class="card">
@@ -283,7 +409,12 @@ pre.io {
 
   <!-- ================= TRACES ================= -->
   <section id="view-traces" class="hidden">
-    <div class="card">
+    <div class="section-head">
+      <div><div class="eyebrow">Request explorer</div><h1>Traces</h1>
+        <p>Open any request to inspect its input, answer, execution steps, cost, and evaluation.</p></div>
+    </div>
+    <div id="traces-status" class="status-banner hidden"></div>
+    <div class="card toolbar">
       <div class="row">
         <div><label for="f-name">Name</label><input id="f-name" placeholder="any"></div>
         <div><label for="f-user">User</label><input id="f-user" placeholder="any"></div>
@@ -307,28 +438,36 @@ pre.io {
             <tbody id="trace-rows"></tbody>
           </table>
         </div>
-        <div class="empty" id="traces-empty">No traces yet.</div>
+        <div class="empty" id="traces-empty"><span class="empty-icon">⌁</span>
+          <strong>No traces found</strong>Try another filter or send a request through the SDK.</div>
       </div>
 
       <div>
         <div class="card" id="detail-card">
-          <div class="empty" id="detail-empty">Select a trace.</div>
+          <div class="empty" id="detail-empty"><span class="empty-icon">⌁</span>
+            <strong>Select a trace</strong>Its request, response, timeline, cost, and score will appear here.</div>
           <div id="detail" class="hidden">
-            <h2 id="d-name"></h2>
-            <div class="row" style="gap:6px; margin:8px 0 14px">
-              <span class="pill mono" id="d-id"></span>
+            <div class="detail-title"><div><div class="eyebrow">Trace detail</div><h2 id="d-name"></h2></div>
               <span class="pill" id="d-exp"></span>
             </div>
-            <dl class="kv" id="d-kv"></dl>
+            <div class="row" style="gap:6px; margin:9px 0 14px"><span class="pill mono" id="d-id"></span></div>
+            <div class="summary-strip" id="d-kv"></div>
 
-            <h3 style="margin:18px 0 8px">Waterfall</h3>
+            <div class="trace-story">
+              <div class="story-card"><div class="story-head"><span class="story-dot"></span>Request input</div>
+                <pre class="io story-body" id="d-input"></pre></div>
+              <div class="story-card answer"><div class="story-head"><span class="story-dot"></span>AI response</div>
+                <pre class="io story-body" id="d-output"></pre></div>
+            </div>
+
+            <div class="subsection-title"><h3>Execution timeline</h3><span class="pill" id="d-span-count"></span></div>
             <div class="legend" id="wf-legend"></div>
             <div id="waterfall"></div>
 
             <div id="span-detail" class="hidden" style="margin-top:14px;
                  border-top:1px solid var(--border); padding-top:12px"></div>
 
-            <h3 style="margin:18px 0 8px">Scores</h3>
+            <div class="subsection-title"><h3>Evaluation scores</h3><span class="pill">LLM judge</span></div>
             <div id="d-scores"></div>
           </div>
         </div>
@@ -338,7 +477,12 @@ pre.io {
 
   <!-- ================= EXPERIMENTS ================= -->
   <section id="view-compare" class="hidden">
-    <div class="card">
+    <div class="section-head">
+      <div><div class="eyebrow">Prompt evaluation</div><h1>Experiments</h1>
+        <p>Compare prompt versions on the same dataset and make quality-versus-cost decisions.</p></div>
+    </div>
+    <div id="compare-status" class="status-banner hidden"></div>
+    <div class="card toolbar">
       <div class="row">
         <div><label for="c-dataset">Dataset</label><select id="c-dataset"></select></div>
         <div><label for="c-a">Baseline run</label><select id="c-a"></select></div>
@@ -347,7 +491,8 @@ pre.io {
       </div>
     </div>
     <div class="card">
-      <div class="empty" id="cmp-empty">Pick two runs.</div>
+      <div class="empty" id="cmp-empty"><span class="empty-icon">A/B</span>
+        <strong>Choose two experiment runs</strong>Select a baseline and comparison run to see what improved.</div>
       <div id="cmp" class="hidden">
         <h2>Run summary</h2>
         <div class="scroll-x"><table id="cmp-summary"></table></div>
@@ -401,6 +546,27 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const trunc = (s,n=1200) => { s = String(s ?? "");
   return s.length > n ? s.slice(0,n)+"\n…["+s.length+" chars]" : s; };
+const pretty = value => {
+  if (value == null || value === "") return "Not captured";
+  let parsed = value;
+  if (typeof value === "string") {
+    try { parsed = JSON.parse(value); } catch { return value; }
+  }
+  return typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+};
+
+function setBusy(id, busy, text="Loading") {
+  const el = $(id); if (!el) return;
+  if (busy) { el.dataset.original = el.textContent; el.textContent = text + "…"; }
+  else if (el.dataset.original) { el.textContent = el.dataset.original; delete el.dataset.original; }
+  el.disabled = busy;
+}
+function setStatus(id, kind, message) {
+  const el = $(id); if (!el) return;
+  if (!message) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  el.className = "status-banner" + (kind === "error" ? " error" : "");
+  el.innerHTML = (kind === "loading" ? '<span class="spinner"></span>' : "") + esc(message);
+}
 
 /* --- api ----------------------------------------------------------------- */
 async function api(path, params) {
@@ -417,6 +583,7 @@ async function api(path, params) {
 function setConn(ok, text) {
   $("conn-dot").className = "dot " + (ok ? "ok" : "bad");
   $("conn-text").textContent = text;
+  $("conn-pill").classList.toggle("live", ok);
 }
 
 async function connect() {
@@ -446,10 +613,13 @@ async function connect() {
 
 /* --- overview ------------------------------------------------------------ */
 async function loadOverview() {
-  const data = await api("/metrics/daily", {
-    days: $("m-days").value,
-    is_experiment: $("m-kind").value,
-  });
+  setBusy("btn-metrics", true, "Refreshing");
+  setStatus("metrics-status", "loading", "Refreshing dashboard metrics");
+  try {
+    const data = await api("/metrics/daily", {
+      days: $("m-days").value,
+      is_experiment: $("m-kind").value,
+    });
   const s = data.summary;
   $("m-traces").textContent = Number(s.traces || 0).toLocaleString();
   $("m-cost").textContent = money(s.cost);
@@ -458,17 +628,16 @@ async function loadOverview() {
 
   const rows = data.data || [];
   $("metrics-empty").classList.toggle("hidden", rows.length > 0);
+  $("m-trend").classList.toggle("hidden", rows.length === 0);
   const maxTraces = Math.max(1, ...rows.map(r => Number(r.traces)));
   $("m-trend").innerHTML = rows.map(r => {
     const day = new Date(r.day).toLocaleDateString(undefined,
       { month:"short", day:"numeric" });
-    const width = Math.max(2, Number(r.traces) / maxTraces * 100);
-    return `<div class="trend-row">
-      <span class="trend-day">${esc(day)}</span>
-      <div class="trend-track" title="${r.traces} traces">
-        <div class="trend-bar" style="width:${width}%"></div></div>
-      <span class="num">${r.traces}</span>
-      <span class="trend-score num">score ${score(r.avg_score)}</span>
+    const height = Math.max(3, Number(r.traces) / maxTraces * 86);
+    return `<div class="chart-col" title="${r.traces} traces · score ${score(r.avg_score)}">
+      <span class="chart-value" style="bottom:calc(${height}% + 30px)">${r.traces}</span>
+      <div class="chart-bar" style="height:${height}%"></div>
+      <span class="chart-label">${esc(day)}</span>
     </div>`;
   }).join("");
 
@@ -479,15 +648,22 @@ async function loadOverview() {
     <td class="num">${money(r.cost)}</td>
     <td class="num">${score(r.avg_score)}</td>
   </tr>`).join("");
+    setStatus("metrics-status", "", "");
+  } catch (e) {
+    setStatus("metrics-status", "error", `Could not load dashboard: ${e.message}`);
+  } finally { setBusy("btn-metrics", false); }
 }
 
 /* --- traces list --------------------------------------------------------- */
 async function loadTraces() {
-  const kind = $("f-kind").value;
-  const data = (await api("/traces", {
-    name: $("f-name").value.trim(), user_id: $("f-user").value.trim(),
-    is_experiment: kind, limit: 100,
-  })).data;
+  setBusy("btn-refresh", true, "Refreshing");
+  setStatus("traces-status", "loading", "Loading recent traces");
+  try {
+    const kind = $("f-kind").value;
+    const data = (await api("/traces", {
+      name: $("f-name").value.trim(), user_id: $("f-user").value.trim(),
+      is_experiment: kind, limit: 100,
+    })).data;
 
   $("traces-empty").classList.toggle("hidden", data.length > 0);
   $("trace-rows").innerHTML = data.map(t => {
@@ -504,6 +680,10 @@ async function loadTraces() {
 
   $("trace-rows").querySelectorAll("tr").forEach(tr =>
     tr.onclick = () => openTrace(tr.dataset.id));
+    setStatus("traces-status", "", "");
+  } catch (e) {
+    setStatus("traces-status", "error", `Could not load traces: ${e.message}`);
+  } finally { setBusy("btn-refresh", false); }
 }
 
 /* --- trace detail -------------------------------------------------------- */
@@ -512,7 +692,15 @@ async function openTrace(id) {
     tr.setAttribute("aria-selected", String(tr.dataset.id === id)));
   // Shareable: the URL now opens straight into this trace.
   history.replaceState(null, "", "#trace=" + encodeURIComponent(id));
-  const t = await api("/traces/" + encodeURIComponent(id));
+  $("detail-empty").innerHTML = '<span class="spinner" style="margin:0 auto 10px"></span><strong>Loading trace</strong>';
+  $("detail-empty").classList.remove("hidden");
+  $("detail").classList.add("hidden");
+  let t;
+  try { t = await api("/traces/" + encodeURIComponent(id)); }
+  catch (e) {
+    $("detail-empty").innerHTML = `<span class="empty-icon">!</span><strong>Could not open trace</strong>${esc(e.message)}`;
+    return;
+  }
   state.trace = t; state.span = null;
 
   $("detail-empty").classList.add("hidden");
@@ -520,6 +708,9 @@ async function openTrace(id) {
   $("d-name").textContent = t.name || "(unnamed)";
   $("d-id").textContent = t.id;
   $("d-exp").textContent = t.is_experiment ? "experiment" : "production";
+  $("d-input").textContent = trunc(pretty(t.input), 2400);
+  $("d-output").textContent = trunc(pretty(t.output), 2400);
+  $("d-span-count").textContent = `${t.span_count} span${t.span_count === 1 ? "" : "s"}`;
 
   const rows = flatten(t.observations);
   const orphans = rows.filter(r => r.node.parent_missing).length;
@@ -531,14 +722,13 @@ async function openTrace(id) {
     orphans ? ["Incomplete",
       `<span class="badge warn">⚠ ${orphans} span${orphans>1?"s":""} missing a parent</span>`]
       : null,
-  ].filter(Boolean).map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  ].filter(Boolean).map(([k,v]) => `<div class="summary-item"><span>${k}</span><strong>${v}</strong></div>`).join("");
 
   drawWaterfall(rows);
   $("span-detail").classList.add("hidden");
 
   $("d-scores").innerHTML = t.scores.length ? t.scores.map(s => `
-    <div style="display:flex; gap:8px; align-items:baseline; padding:5px 0;
-                border-bottom:1px solid var(--border)">
+    <div class="score-row">
       <strong>${esc(s.name)}</strong>
       <span class="mono">${s.value != null ? Number(s.value).toFixed(3)
                                            : esc(s.string_value)}</span>
@@ -561,6 +751,11 @@ function flatten(nodes, depth = 0, out = []) {
 }
 
 function drawWaterfall(rows) {
+  if (!rows.length) {
+    $("wf-legend").innerHTML = "";
+    $("waterfall").innerHTML = '<div class="empty"><span class="empty-icon">⌁</span><strong>No spans captured</strong>This trace has no observation events.</div>';
+    return;
+  }
   const present = [...new Set(rows.map(r => r.node.type))];
   $("wf-legend").innerHTML = present.map(t =>
     `<span><i class="swatch" style="background:${colorFor(t)}"></i>${esc(t)}</span>`
@@ -614,7 +809,7 @@ function showSpan(n, el) {
   const usage = n.usage_details
     ? Object.entries(n.usage_details).map(([k,v]) => `${k} ${v}`).join(" · ") : null;
   $("span-detail").innerHTML = `
-    <h3 style="margin-bottom:8px">${esc(n.name || "(unnamed)")}
+    <div class="span-panel"><h3 style="margin-bottom:8px">${esc(n.name || "(unnamed)")}
       <span class="pill" style="margin-left:6px">${esc(n.type)}</span></h3>
     ${n.parent_missing ? '<p class="note"><span class="badge warn">⚠ parent missing</span> '
       + 'Its parent span never arrived — check the dead-letter table.</p>' : ""}
@@ -628,21 +823,27 @@ function showSpan(n, el) {
     </dl>
     ${n.status_message
       ? `<p class="err-text mono" style="margin-top:8px">${esc(n.status_message)}</p>` : ""}
-    ${n.input != null ? `<label style="margin-top:10px">Input</label>
-        <pre class="io">${esc(trunc(n.input))}</pre>` : ""}
-    ${n.output != null ? `<label style="margin-top:10px">Output</label>
-        <pre class="io">${esc(trunc(n.output))}</pre>` : ""}`;
+    <div class="io-grid">
+      ${n.input != null ? `<div class="io-block"><label>Input</label>
+        <pre class="io">${esc(trunc(pretty(n.input)))}</pre></div>` : ""}
+      ${n.output != null ? `<div class="io-block"><label>Output</label>
+        <pre class="io">${esc(trunc(pretty(n.output)))}</pre></div>` : ""}
+    </div></div>`;
   $("span-detail").classList.remove("hidden");
 }
 
 /* --- experiments --------------------------------------------------------- */
 async function loadDatasets() {
   let data = [];
-  try { data = (await api("/datasets")).data; } catch { /* none yet */ }
+  try { data = (await api("/datasets")).data; }
+  catch (e) { setStatus("compare-status", "error", `Could not load experiments: ${e.message}`); }
   $("c-dataset").innerHTML = data.map(d =>
     `<option value="${esc(d.name)}">${esc(d.name)} (${d.item_count} items, ${d.run_count} runs)</option>`
   ).join("") || '<option value="">no datasets</option>';
-  if (data.length) await loadRuns();
+  if (data.length) { await loadRuns(); setStatus("compare-status", "", ""); }
+  else {
+    $("cmp-empty").innerHTML = '<span class="empty-icon">A/B</span><strong>No experiments yet</strong>Run the demo experiment to create a dataset and two prompt runs.';
+  }
 }
 
 async function loadRuns() {
@@ -662,8 +863,15 @@ async function runCompare() {
     $("cmp-empty").classList.remove("hidden"); $("cmp").classList.add("hidden");
     return;
   }
-  const rep = await api(`/datasets/${encodeURIComponent(ds)}/compare`,
-                        { runs: `${a},${b}` });
+  setBusy("btn-compare", true, "Comparing");
+  setStatus("compare-status", "loading", "Comparing experiment runs");
+  let rep;
+  try { rep = await api(`/datasets/${encodeURIComponent(ds)}/compare`,
+                        { runs: `${a},${b}` }); }
+  catch (e) {
+    setStatus("compare-status", "error", `Could not compare runs: ${e.message}`);
+    setBusy("btn-compare", false); return;
+  }
   state.compare = rep;
   $("cmp-empty").classList.add("hidden"); $("cmp").classList.remove("hidden");
 
@@ -712,6 +920,8 @@ async function runCompare() {
   $("cmp-items").querySelectorAll("a[data-trace]").forEach(a =>
     a.onclick = ev => { ev.preventDefault(); showTab("traces");
       openTrace(a.dataset.trace); });
+  setStatus("compare-status", "", "");
+  setBusy("btn-compare", false);
 }
 
 /* --- chrome -------------------------------------------------------------- */
@@ -725,7 +935,13 @@ function showTab(which) {
 }
 
 $("tab-overview").onclick = () => { showTab("overview"); loadOverview(); };
-$("tab-traces").onclick = () => showTab("traces");
+$("tab-traces").onclick = () => {
+  showTab("traces");
+  if (!state.trace) {
+    const first = $("trace-rows").querySelector("tr");
+    if (first) openTrace(first.dataset.id);
+  }
+};
 $("tab-compare").onclick = () => { showTab("compare"); loadDatasets(); };
 $("btn-connect").onclick = connect;
 $("btn-metrics").onclick = loadOverview;
